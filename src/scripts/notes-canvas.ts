@@ -200,6 +200,14 @@ export function initNotesCanvas(): void {
 	marqueeBox.className = "selection-marquee";
 	marqueeBox.hidden = true;
 	dom.canvas.appendChild(marqueeBox);
+	const snapGuideVertical = document.createElement("div");
+	snapGuideVertical.className = "snap-guide snap-guide-vertical";
+	snapGuideVertical.hidden = true;
+	dom.canvas.appendChild(snapGuideVertical);
+	const snapGuideHorizontal = document.createElement("div");
+	snapGuideHorizontal.className = "snap-guide snap-guide-horizontal";
+	snapGuideHorizontal.hidden = true;
+	dom.canvas.appendChild(snapGuideHorizontal);
 	let marqueeStartPoint: Point | null = null;
 	let marqueeCurrentPoint: Point | null = null;
 	let suppressNextCanvasClick = false;
@@ -520,10 +528,10 @@ export function initNotesCanvas(): void {
 		element: HTMLElement,
 		proposedDx: number,
 		proposedDy: number,
-	): { dx: number; dy: number } {
+	): { dx: number; dy: number; snapX: number | null; snapY: number | null } {
 		const snapTargets = getSnapTargetCenters(item.id);
 		if (snapTargets.length === 0) {
-			return { dx: proposedDx, dy: proposedDy };
+			return { dx: proposedDx, dy: proposedDy, snapX: null, snapY: null };
 		}
 
 		const currentCenter = getElementCenter(element);
@@ -534,6 +542,8 @@ export function initNotesCanvas(): void {
 
 		let bestSnapDx: number | null = null;
 		let bestSnapDy: number | null = null;
+		let snapX: number | null = null;
+		let snapY: number | null = null;
 
 		for (const targetCenter of snapTargets) {
 			const xDelta = targetCenter.x - proposedCenter.x;
@@ -542,6 +552,7 @@ export function initNotesCanvas(): void {
 				(bestSnapDx === null || Math.abs(xDelta) < Math.abs(bestSnapDx))
 			) {
 				bestSnapDx = xDelta;
+				snapX = targetCenter.x;
 			}
 
 			const yDelta = targetCenter.y - proposedCenter.y;
@@ -550,12 +561,15 @@ export function initNotesCanvas(): void {
 				(bestSnapDy === null || Math.abs(yDelta) < Math.abs(bestSnapDy))
 			) {
 				bestSnapDy = yDelta;
+				snapY = targetCenter.y;
 			}
 		}
 
 		return {
 			dx: proposedDx + (bestSnapDx ?? 0),
 			dy: proposedDy + (bestSnapDy ?? 0),
+			snapX,
+			snapY,
 		};
 	}
 
@@ -665,6 +679,27 @@ export function initNotesCanvas(): void {
 		marqueeStartPoint = null;
 		marqueeCurrentPoint = null;
 		marqueeBox.hidden = true;
+	}
+
+	function hideSnapGuides(): void {
+		snapGuideVertical.hidden = true;
+		snapGuideHorizontal.hidden = true;
+	}
+
+	function showSnapGuides(x: number | null, y: number | null): void {
+		if (x === null) {
+			snapGuideVertical.hidden = true;
+		} else {
+			snapGuideVertical.hidden = false;
+			snapGuideVertical.style.left = `${x}px`;
+		}
+
+		if (y === null) {
+			snapGuideHorizontal.hidden = true;
+		} else {
+			snapGuideHorizontal.hidden = false;
+			snapGuideHorizontal.style.top = `${y}px`;
+		}
 	}
 
 	function removeNoteById(noteId: string): boolean {
@@ -843,6 +878,7 @@ export function initNotesCanvas(): void {
 			listeners: {
 				start() {
 					closeContextMenu();
+					hideSnapGuides();
 					draggedIds =
 						selectedItemIds.size > 1 && selectedItemIds.has(item.id)
 							? Array.from(selectedItemIds)
@@ -883,6 +919,7 @@ export function initNotesCanvas(): void {
 					}
 
 					if (draggedItems.length === 0) {
+						hideSnapGuides();
 						return;
 					}
 
@@ -897,6 +934,9 @@ export function initNotesCanvas(): void {
 						);
 						appliedDx = Math.max(minDx, Math.min(maxDx, snapped.dx));
 						appliedDy = Math.max(minDy, Math.min(maxDy, snapped.dy));
+						showSnapGuides(snapped.snapX, snapped.snapY);
+					} else {
+						hideSnapGuides();
 					}
 
 					for (const dragged of draggedItems) {
@@ -907,6 +947,9 @@ export function initNotesCanvas(): void {
 					}
 					renderConnections();
 					refreshConnectionPreview();
+				},
+				end() {
+					hideSnapGuides();
 				},
 			},
 		});

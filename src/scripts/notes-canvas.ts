@@ -48,8 +48,13 @@ interface ImageItem extends BaseItem {
 
 interface Connection {
 	id: string;
-	fromNoteId: string;
-	toNoteId: string;
+	fromItemId: string;
+	toItemId: string;
+}
+
+interface ConnectionDraft {
+	fixedItemId: string;
+	mode: "pick-target" | "pick-source";
 }
 
 interface DomRefs {
@@ -62,6 +67,9 @@ interface DomRefs {
 	replaceGroupBgAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
 	connectNoteAction: HTMLButtonElement;
+	connectImageToNoteAction: HTMLButtonElement;
+	connectImageFromNoteAction: HTMLButtonElement;
+	deleteImageAction: HTMLButtonElement;
 	deleteConnectionAction: HTMLButtonElement;
 	deleteNoteAction: HTMLButtonElement;
 	boardBreadcrumbs: HTMLElement;
@@ -75,6 +83,7 @@ type ContextMenuState =
 	| { type: "canvas"; point: Point }
 	| { type: "group"; groupId: string }
 	| { type: "note"; noteId: string }
+	| { type: "image"; imageId: string }
 	| { type: "connection"; connectionId: string };
 
 function createId(): string {
@@ -120,6 +129,9 @@ export function initNotesCanvas(): void {
 	const replaceGroupBgAction = document.getElementById("replace-group-bg-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
 	const connectNoteAction = document.getElementById("connect-note-action");
+	const connectImageToNoteAction = document.getElementById("connect-image-to-note-action");
+	const connectImageFromNoteAction = document.getElementById("connect-image-from-note-action");
+	const deleteImageAction = document.getElementById("delete-image-action");
 	const deleteConnectionAction = document.getElementById("delete-connection-action");
 	const deleteNoteAction = document.getElementById("delete-note-action");
 	const boardBreadcrumbs = document.getElementById("board-breadcrumbs");
@@ -138,6 +150,9 @@ export function initNotesCanvas(): void {
 		!(replaceGroupBgAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
 		!(connectNoteAction instanceof HTMLButtonElement) ||
+		!(connectImageToNoteAction instanceof HTMLButtonElement) ||
+		!(connectImageFromNoteAction instanceof HTMLButtonElement) ||
+		!(deleteImageAction instanceof HTMLButtonElement) ||
 		!(deleteConnectionAction instanceof HTMLButtonElement) ||
 		!(deleteNoteAction instanceof HTMLButtonElement) ||
 		!(boardBreadcrumbs instanceof HTMLElement) ||
@@ -164,6 +179,9 @@ export function initNotesCanvas(): void {
 		replaceGroupBgAction,
 		deleteGroupAction,
 		connectNoteAction,
+		connectImageToNoteAction,
+		connectImageFromNoteAction,
+		deleteImageAction,
 		deleteConnectionAction,
 		deleteNoteAction,
 		boardBreadcrumbs,
@@ -178,7 +196,7 @@ export function initNotesCanvas(): void {
 	const boardStack: Board[] = [rootBoard];
 	const noteElements = new Map<string, HTMLElement>();
 	const itemElements = new Map<string, HTMLElement>();
-	let connectionPreviewFromNoteId: string | null = null;
+	let connectionDraft: ConnectionDraft | null = null;
 	let connectionPreviewMousePoint: Point | null = null;
 	let activeRichEditor: HTMLElement | null = null;
 	let activeRichNote: NoteItem | null = null;
@@ -209,6 +227,9 @@ export function initNotesCanvas(): void {
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
+		dom.connectImageToNoteAction.hidden = true;
+		dom.connectImageFromNoteAction.hidden = true;
+		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
 	}
@@ -222,6 +243,9 @@ export function initNotesCanvas(): void {
 		dom.replaceGroupBgAction.hidden = false;
 		dom.deleteGroupAction.hidden = false;
 		dom.connectNoteAction.hidden = true;
+		dom.connectImageToNoteAction.hidden = true;
+		dom.connectImageFromNoteAction.hidden = true;
+		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
 	}
@@ -235,8 +259,27 @@ export function initNotesCanvas(): void {
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = false;
+		dom.connectImageToNoteAction.hidden = true;
+		dom.connectImageFromNoteAction.hidden = true;
+		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = false;
+	}
+
+	function showImageMenu(imageId: string): void {
+		contextMenuState = { type: "image", imageId };
+		dom.createNoteAction.hidden = true;
+		dom.createGroupAction.hidden = true;
+		dom.createImageAction.hidden = true;
+		dom.renameGroupAction.hidden = true;
+		dom.replaceGroupBgAction.hidden = true;
+		dom.deleteGroupAction.hidden = true;
+		dom.connectNoteAction.hidden = true;
+		dom.connectImageToNoteAction.hidden = false;
+		dom.connectImageFromNoteAction.hidden = false;
+		dom.deleteImageAction.hidden = false;
+		dom.deleteConnectionAction.hidden = true;
+		dom.deleteNoteAction.hidden = true;
 	}
 
 	function showConnectionMenu(connectionId: string): void {
@@ -248,6 +291,9 @@ export function initNotesCanvas(): void {
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
+		dom.connectImageToNoteAction.hidden = true;
+		dom.connectImageFromNoteAction.hidden = true;
+		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = false;
 		dom.deleteNoteAction.hidden = true;
 	}
@@ -301,6 +347,11 @@ export function initNotesCanvas(): void {
 	function findNoteInCurrentBoard(noteId: string): NoteItem | undefined {
 		const items = currentBoard().items;
 		return items.find((item): item is NoteItem => item.type === "note" && item.id === noteId);
+	}
+
+	function findImageInCurrentBoard(imageId: string): ImageItem | undefined {
+		const items = currentBoard().items;
+		return items.find((item): item is ImageItem => item.type === "image" && item.id === imageId);
 	}
 
 	function getMenuHeight(): number {
@@ -474,7 +525,7 @@ export function initNotesCanvas(): void {
 	}
 
 	function clearConnectionPreview(): void {
-		connectionPreviewFromNoteId = null;
+		connectionDraft = null;
 		connectionPreviewMousePoint = null;
 		dom.connectionPreview.hidden = true;
 		dom.connectionPreview.style.display = "none";
@@ -574,10 +625,10 @@ export function initNotesCanvas(): void {
 		currentBoard().items.splice(index, 1);
 		currentBoard().connections = currentBoard().connections.filter(
 			(connection) =>
-				connection.fromNoteId !== noteId && connection.toNoteId !== noteId,
+				connection.fromItemId !== noteId && connection.toItemId !== noteId,
 		);
 
-		if (connectionPreviewFromNoteId === noteId) {
+		if (connectionDraft?.fixedItemId === noteId) {
 			clearConnectionPreview();
 		}
 		selectedItemIds.delete(noteId);
@@ -593,6 +644,13 @@ export function initNotesCanvas(): void {
 		}
 
 		currentBoard().items.splice(index, 1);
+		currentBoard().connections = currentBoard().connections.filter(
+			(connection) =>
+				connection.fromItemId !== groupId && connection.toItemId !== groupId,
+		);
+		if (connectionDraft?.fixedItemId === groupId) {
+			clearConnectionPreview();
+		}
 		selectedItemIds.delete(groupId);
 		return true;
 	}
@@ -606,6 +664,13 @@ export function initNotesCanvas(): void {
 		}
 
 		currentBoard().items.splice(index, 1);
+		currentBoard().connections = currentBoard().connections.filter(
+			(connection) =>
+				connection.fromItemId !== imageId && connection.toItemId !== imageId,
+		);
+		if (connectionDraft?.fixedItemId === imageId) {
+			clearConnectionPreview();
+		}
 		selectedItemIds.delete(imageId);
 		return true;
 	}
@@ -616,12 +681,12 @@ export function initNotesCanvas(): void {
 
 		board.connections = board.connections.filter(
 			(connection) =>
-				noteElements.has(connection.fromNoteId) && noteElements.has(connection.toNoteId),
+				itemElements.has(connection.fromItemId) && itemElements.has(connection.toItemId),
 		);
 
 		for (const connection of board.connections) {
-			const fromElement = noteElements.get(connection.fromNoteId);
-			const toElement = noteElements.get(connection.toNoteId);
+			const fromElement = itemElements.get(connection.fromItemId);
+			const toElement = itemElements.get(connection.toItemId);
 			if (!fromElement || !toElement) {
 				continue;
 			}
@@ -652,24 +717,33 @@ export function initNotesCanvas(): void {
 	}
 
 	function refreshConnectionPreview(): void {
-		if (!connectionPreviewFromNoteId || !connectionPreviewMousePoint) {
+		if (!connectionDraft || !connectionPreviewMousePoint) {
 			dom.connectionPreview.hidden = true;
 			dom.connectionPreview.style.display = "none";
 			dom.connectionPreview.setAttribute("visibility", "hidden");
 			return;
 		}
 
-		const fromElement = noteElements.get(connectionPreviewFromNoteId);
-		if (!fromElement) {
+		const fixedElement = itemElements.get(connectionDraft.fixedItemId);
+		if (!fixedElement) {
 			clearConnectionPreview();
 			return;
 		}
 
-		const from = getClosestEdgeAnchor(fromElement, connectionPreviewMousePoint);
-		dom.connectionPreview.setAttribute("x1", String(from.x));
-		dom.connectionPreview.setAttribute("y1", String(from.y));
-		dom.connectionPreview.setAttribute("x2", String(connectionPreviewMousePoint.x));
-		dom.connectionPreview.setAttribute("y2", String(connectionPreviewMousePoint.y));
+		const fixedAnchor = getClosestEdgeAnchor(fixedElement, connectionPreviewMousePoint);
+		if (connectionDraft.mode === "pick-target") {
+			dom.connectionPreview.setAttribute("x1", String(fixedAnchor.x));
+			dom.connectionPreview.setAttribute("y1", String(fixedAnchor.y));
+			dom.connectionPreview.setAttribute("x2", String(connectionPreviewMousePoint.x));
+			dom.connectionPreview.setAttribute("y2", String(connectionPreviewMousePoint.y));
+		} else {
+			const sourcePoint = connectionPreviewMousePoint;
+			const targetAnchor = getClosestEdgeAnchor(fixedElement, sourcePoint);
+			dom.connectionPreview.setAttribute("x1", String(sourcePoint.x));
+			dom.connectionPreview.setAttribute("y1", String(sourcePoint.y));
+			dom.connectionPreview.setAttribute("x2", String(targetAnchor.x));
+			dom.connectionPreview.setAttribute("y2", String(targetAnchor.y));
+		}
 		dom.connectionPreview.setAttribute("marker-end", "url(#connection-arrowhead)");
 		dom.connectionPreview.hidden = false;
 		dom.connectionPreview.style.display = "inline";
@@ -1144,6 +1218,7 @@ export function initNotesCanvas(): void {
 		const relative = getRelativePoint(dom.canvas, event.clientX, event.clientY);
 		const noteTarget = target?.closest(".note");
 		const groupTarget = target?.closest(".group-item");
+		const imageTarget = target?.closest(".image-item");
 		const connectionTarget = target?.closest("[data-connection-id]");
 
 		if (connectionTarget instanceof SVGElement) {
@@ -1180,6 +1255,13 @@ export function initNotesCanvas(): void {
 				return;
 			}
 			showGroupMenu(groupId);
+		} else if (imageTarget instanceof HTMLElement) {
+			const imageId = imageTarget.dataset.itemId;
+			if (!imageId || !findImageInCurrentBoard(imageId)) {
+				closeContextMenu();
+				return;
+			}
+			showImageMenu(imageId);
 		} else if (canOpenCanvasMenu(event.target)) {
 			showCanvasMenu(relative);
 		} else {
@@ -1200,7 +1282,7 @@ export function initNotesCanvas(): void {
 	});
 
 	document.addEventListener("pointermove", (event) => {
-		if (!connectionPreviewFromNoteId) {
+		if (!connectionDraft) {
 			return;
 		}
 
@@ -1214,7 +1296,7 @@ export function initNotesCanvas(): void {
 			return;
 		}
 
-		if (!connectionPreviewFromNoteId) {
+		if (!connectionDraft) {
 			const target = event.target instanceof HTMLElement ? event.target : null;
 			if (target && (target.closest("#context-menu") || target.closest("#text-toolbar"))) {
 				return;
@@ -1254,36 +1336,56 @@ export function initNotesCanvas(): void {
 			return;
 		}
 		const noteTarget = target?.closest(".note");
-		if (!(noteTarget instanceof HTMLElement)) {
-			clearConnectionPreview();
-			return;
-		}
-		if (noteTarget.classList.contains("is-editing")) {
+		const imageTarget = target?.closest(".image-item");
+		const clickedNoteId =
+			noteTarget instanceof HTMLElement && !noteTarget.classList.contains("is-editing")
+				? noteTarget.dataset.itemId ?? null
+				: null;
+		const clickedImageId =
+			imageTarget instanceof HTMLElement ? imageTarget.dataset.itemId ?? null : null;
+
+		const clickedItemId = clickedNoteId ?? clickedImageId;
+		if (!clickedItemId || clickedItemId === connectionDraft.fixedItemId) {
 			clearConnectionPreview();
 			return;
 		}
 
-		const toNoteId = noteTarget.dataset.itemId;
-		if (!toNoteId || toNoteId === connectionPreviewFromNoteId) {
+		const clickedItem = currentBoard().items.find((item) => item.id === clickedItemId);
+		const fixedItem = currentBoard().items.find((item) => item.id === connectionDraft.fixedItemId);
+		if (!clickedItem || !fixedItem) {
 			clearConnectionPreview();
 			return;
 		}
-		if (!findNoteInCurrentBoard(toNoteId) || !findNoteInCurrentBoard(connectionPreviewFromNoteId)) {
+
+		let fromItemId: string;
+		let toItemId: string;
+		if (connectionDraft.mode === "pick-target") {
+			fromItemId = connectionDraft.fixedItemId;
+			toItemId = clickedItemId;
+		} else {
+			fromItemId = clickedItemId;
+			toItemId = connectionDraft.fixedItemId;
+		}
+
+		const isSupportedDirection =
+			(fixedItem.type === "note" && (clickedItem.type === "note" || clickedItem.type === "image")) ||
+			(fixedItem.type === "image" && clickedItem.type === "note");
+		if (!isSupportedDirection) {
 			clearConnectionPreview();
 			return;
 		}
 
 		const hasDuplicate = currentBoard().connections.some(
 			(connection) =>
-				connection.fromNoteId === connectionPreviewFromNoteId &&
-				connection.toNoteId === toNoteId,
+				connection.fromItemId === fromItemId &&
+				connection.toItemId === toItemId,
 		);
 
 		if (!hasDuplicate) {
 			currentBoard().connections.push({
 				id: createId(),
-				fromNoteId: connectionPreviewFromNoteId,
-				toNoteId,
+				fromItemId,
+				toItemId,
 			});
 		}
 
@@ -1295,7 +1397,7 @@ export function initNotesCanvas(): void {
 		if (event.button !== 0) {
 			return;
 		}
-		if (connectionPreviewFromNoteId) {
+		if (connectionDraft) {
 			return;
 		}
 
@@ -1422,9 +1524,39 @@ export function initNotesCanvas(): void {
 			return;
 		}
 
-		connectionPreviewFromNoteId = contextMenuState.noteId;
-		const sourceElement = noteElements.get(contextMenuState.noteId);
+		connectionDraft = { fixedItemId: contextMenuState.noteId, mode: "pick-target" };
+		const sourceElement = itemElements.get(contextMenuState.noteId);
 		connectionPreviewMousePoint = sourceElement ? getElementCenter(sourceElement) : null;
+		closeContextMenu();
+		refreshConnectionPreview();
+	});
+
+	dom.connectImageToNoteAction.addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+
+		if (!contextMenuState || contextMenuState.type !== "image") {
+			return;
+		}
+
+		connectionDraft = { fixedItemId: contextMenuState.imageId, mode: "pick-target" };
+		const sourceElement = itemElements.get(contextMenuState.imageId);
+		connectionPreviewMousePoint = sourceElement ? getElementCenter(sourceElement) : null;
+		closeContextMenu();
+		refreshConnectionPreview();
+	});
+
+	dom.connectImageFromNoteAction.addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+
+		if (!contextMenuState || contextMenuState.type !== "image") {
+			return;
+		}
+
+		connectionDraft = { fixedItemId: contextMenuState.imageId, mode: "pick-source" };
+		const targetElement = itemElements.get(contextMenuState.imageId);
+		connectionPreviewMousePoint = targetElement ? getElementCenter(targetElement) : null;
 		closeContextMenu();
 		refreshConnectionPreview();
 	});
@@ -1448,6 +1580,19 @@ export function initNotesCanvas(): void {
 		}
 
 		if (!removeNoteById(contextMenuState.noteId)) {
+			closeContextMenu();
+			return;
+		}
+		renderBoard();
+		closeContextMenu();
+	});
+
+	dom.deleteImageAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "image") {
+			return;
+		}
+
+		if (!removeImageById(contextMenuState.imageId)) {
 			closeContextMenu();
 			return;
 		}
@@ -1515,8 +1660,11 @@ export function initNotesCanvas(): void {
 		}
 
 		if (
-			connectionPreviewFromNoteId &&
-			!(target instanceof HTMLElement && target.closest(".note"))
+			connectionDraft &&
+			!(
+				target instanceof HTMLElement &&
+				(target.closest(".note") || target.closest(".image-item"))
+			)
 		) {
 			clearConnectionPreview();
 		}

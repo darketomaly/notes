@@ -338,6 +338,10 @@ export function initNotesCanvas(): void {
 		return items.find((item): item is ImageItem => item.type === "image" && item.id === imageId);
 	}
 
+	function canConnectItem(item: CanvasItem): boolean {
+		return item.type === "note" || item.type === "image";
+	}
+
 	function beginConnectionFromItem(itemId: string): void {
 		connectionDraft = { fixedItemId: itemId };
 		const sourceElement = itemElements.get(itemId);
@@ -915,6 +919,8 @@ export function initNotesCanvas(): void {
 					element.style.top = `${item.y}px`;
 					element.style.width = `${item.width}px`;
 					element.style.height = `${item.height}px`;
+					renderConnections();
+					refreshConnectionPreview();
 				},
 			},
 		});
@@ -1415,10 +1421,7 @@ export function initNotesCanvas(): void {
 		const fromItemId = connectionDraft.fixedItemId;
 		const toItemId = clickedItemId;
 
-		const isSupportedDirection =
-			(fixedItem.type === "note" && (clickedItem.type === "note" || clickedItem.type === "image")) ||
-			(fixedItem.type === "image" && clickedItem.type === "note");
-		if (!isSupportedDirection) {
+		if (!canConnectItem(fixedItem) || !canConnectItem(clickedItem)) {
 			clearConnectionPreview();
 			return;
 		}

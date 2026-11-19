@@ -318,6 +318,45 @@ export function initNotesCanvas(): void {
 		refreshBoldButtonState();
 	}
 
+	function placeCaretNearPoint(editor: HTMLElement, clientX: number, clientY: number): void {
+		const selection = window.getSelection();
+		if (!selection) {
+			return;
+		}
+
+		const caretDocument = document as Document & {
+			caretRangeFromPoint?: (x: number, y: number) => Range | null;
+			caretPositionFromPoint?: (
+				x: number,
+				y: number,
+			) => { offsetNode: Node; offset: number } | null;
+		};
+
+		let range: Range | null = null;
+		if (typeof caretDocument.caretRangeFromPoint === "function") {
+			range = caretDocument.caretRangeFromPoint(clientX, clientY);
+		} else if (typeof caretDocument.caretPositionFromPoint === "function") {
+			const caretPosition = caretDocument.caretPositionFromPoint(clientX, clientY);
+			if (caretPosition) {
+				range = document.createRange();
+				range.setStart(caretPosition.offsetNode, caretPosition.offset);
+				range.collapse(true);
+			}
+		}
+
+		if (range && editor.contains(range.startContainer)) {
+			selection.removeAllRanges();
+			selection.addRange(range);
+			return;
+		}
+
+		const fallbackRange = document.createRange();
+		fallbackRange.selectNodeContents(editor);
+		fallbackRange.collapse(false);
+		selection.removeAllRanges();
+		selection.addRange(fallbackRange);
+	}
+
 	function normalizeRichEditorContent(editor: HTMLElement): void {
 		const text = editor.textContent ?? "";
 		if (!text.trim()) {
@@ -519,20 +558,17 @@ export function initNotesCanvas(): void {
 				refreshBoldButtonState();
 			});
 			note.addEventListener("dblclick", (event) => {
+				if (note.classList.contains("is-editing")) {
+					return;
+				}
+
 				event.preventDefault();
 				event.stopPropagation();
 				note.classList.add("is-editing");
 				editor.contentEditable = "true";
 				editor.focus();
 				showTextToolbarFor(editor);
-
-				const selection = window.getSelection();
-				if (selection) {
-					const range = document.createRange();
-					range.selectNodeContents(editor);
-					selection.removeAllRanges();
-					selection.addRange(range);
-				}
+				placeCaretNearPoint(editor, event.clientX, event.clientY);
 			});
 			editor.addEventListener("blur", () => {
 				normalizeRichEditorContent(editor);
@@ -556,6 +592,23 @@ export function initNotesCanvas(): void {
 			editor.addEventListener("mouseup", () => {
 				refreshBoldButtonState();
 				positionTextToolbar(editor);
+			});
+			editor.addEventListener("click", (event) => {
+				if (!note.classList.contains("is-editing") || event.detail !== 3) {
+					return;
+				}
+
+				event.preventDefault();
+				const selection = window.getSelection();
+				if (!selection) {
+					return;
+				}
+
+				const range = document.createRange();
+				range.selectNodeContents(editor);
+				selection.removeAllRanges();
+				selection.addRange(range);
+				refreshBoldButtonState();
 			});
 			note.appendChild(editor);
 			element = note;

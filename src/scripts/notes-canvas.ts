@@ -2556,6 +2556,21 @@ export function initNotesCanvas(): void {
 			}
 		}
 
+		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") {
+			event.preventDefault();
+			if (
+				activeRichEditor ||
+				targetIsActiveEditableControl ||
+				selectedItemIds.size === 0
+			) {
+				return;
+			}
+			if (duplicateItemsByIds(new Set(selectedItemIds))) {
+				renderBoard();
+			}
+			return;
+		}
+
 		if (event.key === "Delete") {
 			if (
 				activeRichEditor ||

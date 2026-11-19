@@ -254,6 +254,24 @@ export function initNotesCanvas(): void {
 		};
 	}
 
+	function getClosestEdgeAnchor(element: HTMLElement, targetPoint: Point): Point {
+		const center = getElementCenter(element);
+		const dx = targetPoint.x - center.x;
+		const dy = targetPoint.y - center.y;
+
+		if (Math.abs(dx) >= Math.abs(dy)) {
+			return {
+				x: dx >= 0 ? element.offsetLeft + element.offsetWidth : element.offsetLeft,
+				y: center.y,
+			};
+		}
+
+		return {
+			x: center.x,
+			y: dy >= 0 ? element.offsetTop + element.offsetHeight : element.offsetTop,
+		};
+	}
+
 	function clearConnectionPreview(): void {
 		connectionPreviewFromNoteId = null;
 		connectionPreviewMousePoint = null;
@@ -278,8 +296,10 @@ export function initNotesCanvas(): void {
 				continue;
 			}
 
-			const from = getElementCenter(fromElement);
-			const to = getElementCenter(toElement);
+			const fromCenter = getElementCenter(fromElement);
+			const toCenter = getElementCenter(toElement);
+			const from = getClosestEdgeAnchor(fromElement, toCenter);
+			const to = getClosestEdgeAnchor(toElement, fromCenter);
 			const line = document.createElementNS(SVG_NS, "line");
 			line.setAttribute("x1", String(from.x));
 			line.setAttribute("y1", String(from.y));
@@ -305,7 +325,7 @@ export function initNotesCanvas(): void {
 			return;
 		}
 
-		const from = getElementCenter(fromElement);
+		const from = getClosestEdgeAnchor(fromElement, connectionPreviewMousePoint);
 		dom.connectionPreview.setAttribute("x1", String(from.x));
 		dom.connectionPreview.setAttribute("y1", String(from.y));
 		dom.connectionPreview.setAttribute("x2", String(connectionPreviewMousePoint.x));

@@ -92,11 +92,42 @@
 			:global(.note:active) {
 				cursor: grabbing;
 			}
+
+			.context-menu {
+				position: absolute;
+				z-index: 20;
+				min-width: 160px;
+				padding: 0.35rem;
+				border: 1px solid #3f3f3f;
+				border-radius: 0.55rem;
+				background: #232323;
+				box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+			}
+
+			.context-menu button {
+				display: block;
+				width: 100%;
+				border: 0;
+				border-radius: 0.4rem;
+				padding: 0.45rem 0.55rem;
+				font: inherit;
+				text-align: left;
+				color: #f1f1f1;
+				background: transparent;
+				cursor: pointer;
+			}
+
+			.context-menu button:hover {
+				background: #333;
+			}
 		</style>
 	</head>
 	<body>
 		<main class="canvas" id="canvas" aria-label="Notes canvas">
 			<p class="hint">Double-click anywhere to create a note</p>
+			<div class="context-menu" id="context-menu" hidden>
+				<button type="button" id="create-note-action">Create note</button>
+			</div>
 		</main>
 		<script type="module">
 			import interact from "interactjs";
@@ -104,6 +135,47 @@
 			const NOTE_WIDTH = 240;
 			const EDGE_PADDING = 12;
 			const canvas = document.getElementById("canvas");
+			const contextMenu = document.getElementById("context-menu");
+			const createNoteAction = document.getElementById("create-note-action");
+			let contextPoint = null;
+
+			function createNoteAt(positionX, positionY) {
+				if (!(canvas instanceof HTMLElement)) {
+					return;
+				}
+
+				const bounds = canvas.getBoundingClientRect();
+				const maxLeft = Math.max(
+					EDGE_PADDING,
+					bounds.width - NOTE_WIDTH - EDGE_PADDING,
+				);
+				const left = Math.min(Math.max(positionX, EDGE_PADDING), maxLeft);
+				const top = Math.max(positionY, EDGE_PADDING);
+
+				if (!Number.isFinite(left) || !Number.isFinite(top)) {
+					return;
+				}
+
+				const note = document.createElement("div");
+				note.className = "note";
+				note.style.left = `${left}px`;
+				note.style.top = `${top}px`;
+
+				const input = document.createElement("input");
+				input.type = "text";
+				input.placeholder = "Write a note…";
+				input.setAttribute("aria-label", "Note content");
+
+				note.appendChild(input);
+				canvas.appendChild(note);
+				input.focus();
+			}
+
+			function closeContextMenu() {
+				if (contextMenu instanceof HTMLElement) {
+					contextMenu.hidden = true;
+				}
+			}
 
 			interact(".note").draggable({
 				ignoreFrom: "input",
@@ -124,7 +196,11 @@
 				},
 			});
 
-			if (canvas) {
+			if (
+				canvas instanceof HTMLElement &&
+				contextMenu instanceof HTMLElement &&
+				createNoteAction instanceof HTMLButtonElement
+			) {
 				canvas.addEventListener("dblclick", (event) => {
 					const target = event.target;
 					if (target instanceof HTMLElement && target.closest(".note")) {
@@ -136,30 +212,54 @@
 						typeof event.offsetX === "number" ? event.offsetX : event.clientX - bounds.left;
 					const relativeY =
 						typeof event.offsetY === "number" ? event.offsetY : event.clientY - bounds.top;
-					const maxLeft = Math.max(
-						EDGE_PADDING,
-						bounds.width - NOTE_WIDTH - EDGE_PADDING,
-					);
-					const left = Math.min(Math.max(relativeX, EDGE_PADDING), maxLeft);
-					const top = Math.max(relativeY, EDGE_PADDING);
+					closeContextMenu();
+					createNoteAt(relativeX, relativeY);
+				});
 
-					if (!Number.isFinite(left) || !Number.isFinite(top)) {
+				canvas.addEventListener("contextmenu", (event) => {
+					event.preventDefault();
+					const target = event.target;
+
+					if (target instanceof HTMLElement && target.closest(".note")) {
+						closeContextMenu();
 						return;
 					}
 
-					const note = document.createElement("div");
-					note.className = "note";
-					note.style.left = `${left}px`;
-					note.style.top = `${top}px`;
+					const bounds = canvas.getBoundingClientRect();
+					const relativeX = event.clientX - bounds.left;
+					const relativeY = event.clientY - bounds.top;
+					const menuWidth = 170;
+					const menuHeight = 52;
+					const menuLeft = Math.min(relativeX, bounds.width - menuWidth - EDGE_PADDING);
+					const menuTop = Math.min(relativeY, bounds.height - menuHeight - EDGE_PADDING);
 
-					const input = document.createElement("input");
-					input.type = "text";
-					input.placeholder = "Write a note…";
-					input.setAttribute("aria-label", "Note content");
+					contextPoint = { x: relativeX, y: relativeY };
+					contextMenu.style.left = `${Math.max(EDGE_PADDING, menuLeft)}px`;
+					contextMenu.style.top = `${Math.max(EDGE_PADDING, menuTop)}px`;
+					contextMenu.hidden = false;
+				});
 
-					note.appendChild(input);
-					canvas.appendChild(note);
-					input.focus();
+				createNoteAction.addEventListener("click", () => {
+					if (!contextPoint) {
+						return;
+					}
+
+					createNoteAt(contextPoint.x, contextPoint.y);
+					closeContextMenu();
+				});
+
+				document.addEventListener("pointerdown", (event) => {
+					const target = event.target;
+					if (target instanceof HTMLElement && target.closest("#context-menu")) {
+						return;
+					}
+					closeContextMenu();
+				});
+
+				document.addEventListener("keydown", (event) => {
+					if (event.key === "Escape") {
+						closeContextMenu();
+					}
 				});
 			}
 		</script>

@@ -65,6 +65,8 @@ interface OrganizerItem extends BaseItem {
 	title: string;
 	width: number;
 	height: number;
+	minWidth?: number;
+	minHeight?: number;
 }
 
 interface Connection {
@@ -451,17 +453,24 @@ export function initNotesCanvas(): void {
 			parseFloat(styles.paddingRight) +
 			parseFloat(styles.borderLeftWidth) +
 			parseFloat(styles.borderRightWidth);
-		const editMinWidthRaw = groupItem.dataset.editMinWidth;
-		const editMinWidth = editMinWidthRaw ? Number.parseFloat(editMinWidthRaw) : Number.NaN;
-		const minimumWidth =
-			groupItem.classList.contains("is-editing") && !Number.isNaN(editMinWidth)
-				? editMinWidth
-				: (group.width ?? GROUP_WIDTH);
+		const minimumWidth = groupItem.classList.contains("is-editing")
+			? GROUP_WIDTH
+			: (group.width ?? GROUP_WIDTH);
 		const requiredWidth = Math.max(minimumWidth, Math.ceil(textWidth + horizontalPadding + 2));
 		if (!group.width || requiredWidth !== group.width) {
 			group.width = requiredWidth;
 			groupItem.style.width = `${group.width}px`;
 		}
+	}
+
+	function reflowContainingOrganizer(item: ContainableItem): void {
+		if (!item.parentOrganizerId) {
+			return;
+		}
+
+		layoutOrganizerItems(item.parentOrganizerId);
+		renderConnections();
+		refreshConnectionPreview();
 	}
 
 	function findImageInCurrentBoard(imageId: string): ImageItem | undefined {
@@ -546,11 +555,24 @@ export function initNotesCanvas(): void {
 		if (!organizer) {
 			return;
 		}
+		if (!organizer.minWidth) {
+			organizer.minWidth = organizer.width;
+		}
+		if (!organizer.minHeight) {
+			organizer.minHeight = organizer.height;
+		}
 
 		const bounds = getOrganizerBodyBounds(organizer);
+		const availableBodyWidth = Math.max(
+			1,
+			organizer.width - ORGANIZER_BODY_INSET * 2,
+		);
+		const bodyRight = bounds.left + availableBodyWidth;
 		let cursorX = bounds.left;
 		let cursorY = bounds.top;
 		let rowHeight = 0;
+		let usedRight = bounds.left;
+		let usedBottom = bounds.top;
 
 		const containedItems = currentBoard().items.filter(
 			(candidate): candidate is ContainableItem =>
@@ -563,24 +585,42 @@ export function initNotesCanvas(): void {
 			const itemWidth = element?.offsetWidth ?? fallbackSize.width;
 			const itemHeight = element?.offsetHeight ?? fallbackSize.height;
 
-			if (cursorX > bounds.left && cursorX + itemWidth > bounds.right) {
+			if (cursorX > bounds.left && cursorX + itemWidth > bodyRight) {
 				cursorX = bounds.left;
 				cursorY += rowHeight + ORGANIZER_GRID_SIZE;
 				rowHeight = 0;
 			}
 
-			const maxX = Math.max(bounds.left, bounds.right - itemWidth);
-			const maxY = Math.max(bounds.top, bounds.bottom - itemHeight);
-			contained.x = Math.min(cursorX, maxX);
-			contained.y = Math.min(cursorY, maxY);
+			contained.x = cursorX;
+			contained.y = cursorY;
 
 			if (element) {
 				element.style.left = `${contained.x}px`;
 				element.style.top = `${contained.y}px`;
 			}
+			usedRight = Math.max(usedRight, contained.x + itemWidth);
+			usedBottom = Math.max(usedBottom, contained.y + itemHeight);
 
 			cursorX = contained.x + itemWidth + ORGANIZER_GRID_SIZE;
 			rowHeight = Math.max(rowHeight, itemHeight);
+		}
+
+		const requiredWidth = Math.max(
+			organizer.minWidth,
+			Math.ceil(usedRight - organizer.x + ORGANIZER_BODY_INSET),
+		);
+		const requiredHeight = Math.max(
+			organizer.minHeight,
+			Math.ceil(usedBottom - organizer.y + ORGANIZER_BODY_INSET),
+		);
+		if (requiredWidth !== organizer.width || requiredHeight !== organizer.height) {
+			organizer.width = requiredWidth;
+			organizer.height = requiredHeight;
+			const organizerElement = itemElements.get(organizer.id);
+			if (organizerElement) {
+				organizerElement.style.width = `${organizer.width}px`;
+				organizerElement.style.height = `${organizer.height}px`;
+			}
 		}
 	}
 
@@ -1149,7 +1189,6 @@ export function initNotesCanvas(): void {
 			}
 
 			candidate.classList.add("is-editing");
-			candidate.dataset.editMinWidth = String(candidate.offsetWidth || GROUP_WIDTH);
 			input.disabled = false;
 			input.focus();
 			input.select();
@@ -1418,6 +1457,7 @@ export function initNotesCanvas(): void {
 						element.style.minHeight = "46px";
 						element.classList.add("is-height-locked");
 					}
+					reflowContainingOrganizer(item);
 					renderConnections();
 					refreshConnectionPreview();
 				},
@@ -1447,6 +1487,7 @@ export function initNotesCanvas(): void {
 					element.style.top = `${item.y}px`;
 					element.style.width = `${item.width}px`;
 					element.style.height = `${item.height}px`;
+					reflowContainingOrganizer(item);
 					renderConnections();
 					refreshConnectionPreview();
 				},
@@ -1477,6 +1518,7 @@ export function initNotesCanvas(): void {
 			editor.addEventListener("input", () => {
 				normalizeRichEditorContent(editor);
 				item.htmlContent = editor.innerHTML;
+				reflowContainingOrganizer(item);
 				renderConnections();
 				refreshConnectionPreview();
 				positionTextToolbar(editor);
@@ -1501,6 +1543,7 @@ export function initNotesCanvas(): void {
 				editor.contentEditable = "false";
 				note.classList.remove("is-editing");
 				item.htmlContent = editor.innerHTML;
+				reflowContainingOrganizer(item);
 				clearBrowserSelection();
 				hideTextToolbar();
 				renderConnections();
@@ -1572,6 +1615,7 @@ export function initNotesCanvas(): void {
 				item.title = input.value || "Untitled group";
 				item.board.title = item.title;
 				growGroupWidthToFitTitle(groupItem, input, item);
+				reflowContainingOrganizer(item);
 				refreshBoardHeader();
 			});
 			input.addEventListener("blur", () => {
@@ -1581,8 +1625,8 @@ export function initNotesCanvas(): void {
 				item.title = input.value;
 				item.board.title = item.title;
 				growGroupWidthToFitTitle(groupItem, input, item);
+				reflowContainingOrganizer(item);
 				exitInlineEditMode(groupItem, input);
-				delete groupItem.dataset.editMinWidth;
 				refreshBoardHeader();
 			});
 			input.addEventListener("keydown", (event) => {
@@ -1605,7 +1649,6 @@ export function initNotesCanvas(): void {
 			if (focusInput) {
 				queueMicrotask(() => {
 					groupItem.classList.add("is-editing");
-					groupItem.dataset.editMinWidth = String(groupItem.offsetWidth || GROUP_WIDTH);
 					input.disabled = false;
 					input.focus();
 					input.select();
@@ -1800,6 +1843,8 @@ export function initNotesCanvas(): void {
 			title: `Organizer ${organizerCount}`,
 			width: ORGANIZER_WIDTH,
 			height: ORGANIZER_HEIGHT,
+			minWidth: ORGANIZER_WIDTH,
+			minHeight: ORGANIZER_HEIGHT,
 		};
 		current.items.push(organizer);
 		renderItem(organizer, true);

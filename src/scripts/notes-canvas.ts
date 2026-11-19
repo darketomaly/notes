@@ -51,6 +51,7 @@ interface DomRefs {
 	renameGroupAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
 	connectNoteAction: HTMLButtonElement;
+	deleteConnectionAction: HTMLButtonElement;
 	deleteNoteAction: HTMLButtonElement;
 	boardBreadcrumbs: HTMLElement;
 	connectionsPermanent: SVGGElement;
@@ -60,7 +61,8 @@ interface DomRefs {
 type ContextMenuState =
 	| { type: "canvas"; point: Point }
 	| { type: "group"; groupId: string }
-	| { type: "note"; noteId: string };
+	| { type: "note"; noteId: string }
+	| { type: "connection"; connectionId: string };
 
 function createId(): string {
 	if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -103,6 +105,7 @@ export function initNotesCanvas(): void {
 	const renameGroupAction = document.getElementById("rename-group-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
 	const connectNoteAction = document.getElementById("connect-note-action");
+	const deleteConnectionAction = document.getElementById("delete-connection-action");
 	const deleteNoteAction = document.getElementById("delete-note-action");
 	const boardBreadcrumbs = document.getElementById("board-breadcrumbs");
 	const connectionsPermanent = document.getElementById("connections-permanent");
@@ -116,6 +119,7 @@ export function initNotesCanvas(): void {
 		!(renameGroupAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
 		!(connectNoteAction instanceof HTMLButtonElement) ||
+		!(deleteConnectionAction instanceof HTMLButtonElement) ||
 		!(deleteNoteAction instanceof HTMLButtonElement) ||
 		!(boardBreadcrumbs instanceof HTMLElement) ||
 		!(connectionsPermanent instanceof SVGGElement) ||
@@ -137,6 +141,7 @@ export function initNotesCanvas(): void {
 		renameGroupAction,
 		deleteGroupAction,
 		connectNoteAction,
+		deleteConnectionAction,
 		deleteNoteAction,
 		boardBreadcrumbs,
 		connectionsPermanent,
@@ -166,6 +171,7 @@ export function initNotesCanvas(): void {
 		dom.renameGroupAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
+		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
 	}
 
@@ -176,6 +182,7 @@ export function initNotesCanvas(): void {
 		dom.renameGroupAction.hidden = false;
 		dom.deleteGroupAction.hidden = false;
 		dom.connectNoteAction.hidden = true;
+		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
 	}
 
@@ -186,7 +193,19 @@ export function initNotesCanvas(): void {
 		dom.renameGroupAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = false;
+		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = false;
+	}
+
+	function showConnectionMenu(connectionId: string): void {
+		contextMenuState = { type: "connection", connectionId };
+		dom.createNoteAction.hidden = true;
+		dom.createGroupAction.hidden = true;
+		dom.renameGroupAction.hidden = true;
+		dom.deleteGroupAction.hidden = true;
+		dom.connectNoteAction.hidden = true;
+		dom.deleteConnectionAction.hidden = false;
+		dom.deleteNoteAction.hidden = true;
 	}
 
 	function refreshBoardHeader(): void {
@@ -300,13 +319,23 @@ export function initNotesCanvas(): void {
 			const toCenter = getElementCenter(toElement);
 			const from = getClosestEdgeAnchor(fromElement, toCenter);
 			const to = getClosestEdgeAnchor(toElement, fromCenter);
+			const hitLine = document.createElementNS(SVG_NS, "line");
+			hitLine.setAttribute("x1", String(from.x));
+			hitLine.setAttribute("y1", String(from.y));
+			hitLine.setAttribute("x2", String(to.x));
+			hitLine.setAttribute("y2", String(to.y));
+			hitLine.classList.add("connection-hit-area");
+			hitLine.dataset.connectionId = connection.id;
+
 			const line = document.createElementNS(SVG_NS, "line");
 			line.setAttribute("x1", String(from.x));
 			line.setAttribute("y1", String(from.y));
 			line.setAttribute("x2", String(to.x));
 			line.setAttribute("y2", String(to.y));
 			line.classList.add("connection-line");
+			line.dataset.connectionId = connection.id;
 			line.setAttribute("marker-end", "url(#connection-arrowhead)");
+			dom.connectionsPermanent.appendChild(hitLine);
 			dom.connectionsPermanent.appendChild(line);
 		}
 	}
@@ -579,12 +608,23 @@ export function initNotesCanvas(): void {
 
 	dom.canvas.addEventListener("contextmenu", (event) => {
 		event.preventDefault();
-		const target = event.target instanceof HTMLElement ? event.target : null;
+		const target = event.target instanceof Element ? event.target : null;
 		const relative = getRelativePoint(dom.canvas, event.clientX, event.clientY);
 		const noteTarget = target?.closest(".note");
 		const groupTarget = target?.closest(".group-item");
+		const connectionTarget = target?.closest("[data-connection-id]");
 
-		if (noteTarget instanceof HTMLElement) {
+		if (connectionTarget instanceof SVGElement) {
+			const connectionId = connectionTarget.getAttribute("data-connection-id");
+			if (
+				!connectionId ||
+				!currentBoard().connections.some((connection) => connection.id === connectionId)
+			) {
+				closeContextMenu();
+				return;
+			}
+			showConnectionMenu(connectionId);
+		} else if (noteTarget instanceof HTMLElement) {
 			if (noteTarget.classList.contains("is-editing")) {
 				closeContextMenu();
 				return;
@@ -765,6 +805,24 @@ export function initNotesCanvas(): void {
 			clearConnectionPreview();
 		}
 		renderBoard();
+		closeContextMenu();
+	});
+
+	dom.deleteConnectionAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "connection") {
+			return;
+		}
+
+		const index = currentBoard().connections.findIndex(
+			(connection) => connection.id === contextMenuState.connectionId,
+		);
+		if (index === -1) {
+			closeContextMenu();
+			return;
+		}
+
+		currentBoard().connections.splice(index, 1);
+		renderConnections();
 		closeContextMenu();
 	});
 

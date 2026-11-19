@@ -83,7 +83,7 @@ body {
 	border-radius: 0.65rem;
 	background: #222;
 	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
-	cursor: grab;
+	cursor: move;
 	touch-action: none;
 	user-select: none;
 	-webkit-user-select: none;
@@ -104,12 +104,24 @@ body {
 	-webkit-touch-callout: default;
 }
 
-.note input::placeholder {
-	color: #8b8b8b;
+.note input:disabled {
+	opacity: 1;
+	color: #f5f5f5;
+	cursor: move;
+	pointer-events: none;
 }
 
-.note:active {
-	cursor: grabbing;
+.note.is-editing {
+	cursor: default;
+}
+
+.note.is-editing input {
+	pointer-events: auto;
+	cursor: text;
+}
+
+.note input::placeholder {
+	color: #8b8b8b;
 }
 
 .group-item {

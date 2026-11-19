@@ -230,14 +230,36 @@ export function initNotesCanvas(): void {
 			input.placeholder = "Write a note…";
 			input.value = item.text;
 			input.setAttribute("aria-label", "Note content");
+			input.disabled = true;
 			input.addEventListener("input", () => {
 				item.text = input.value;
+			});
+			note.addEventListener("dblclick", (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				note.classList.add("is-editing");
+				input.disabled = false;
+				input.focus();
+				input.select();
+			});
+			input.addEventListener("blur", () => {
+				input.disabled = true;
+				note.classList.remove("is-editing");
+			});
+			input.addEventListener("keydown", (event) => {
+				if (event.key === "Enter" || event.key === "Escape") {
+					input.blur();
+				}
 			});
 			note.appendChild(input);
 			element = note;
 
 			if (focusInput) {
-				queueMicrotask(() => input.focus());
+				queueMicrotask(() => {
+					note.classList.add("is-editing");
+					input.disabled = false;
+					input.focus();
+				});
 			}
 		} else {
 			const groupButton = document.createElement("button");

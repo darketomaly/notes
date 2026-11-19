@@ -782,7 +782,7 @@ export function initNotesCanvas(): void {
 
 		interact(element).draggable({
 			ignoreFrom:
-				"input, textarea, [contenteditable='true'], .image-resize-handle, .note-resize-handle",
+				"input, textarea, [contenteditable='true'], .item-resize-handle",
 			listeners: {
 				start() {
 					closeContextMenu();
@@ -847,7 +847,7 @@ export function initNotesCanvas(): void {
 
 	function makeResizableNote(element: HTMLElement, item: NoteItem): void {
 		interact(element).resizable({
-			edges: { right: ".note-resize-handle", bottom: ".note-resize-handle" },
+			edges: { right: ".item-resize-handle", bottom: ".item-resize-handle" },
 			listeners: {
 				start() {
 					closeContextMenu();
@@ -899,7 +899,7 @@ export function initNotesCanvas(): void {
 
 	function makeResizableImage(element: HTMLElement, item: ImageItem): void {
 		interact(element).resizable({
-			edges: { right: ".image-resize-handle", bottom: ".image-resize-handle" },
+			edges: { right: ".item-resize-handle", bottom: ".item-resize-handle" },
 			listeners: {
 				start() {
 					closeContextMenu();
@@ -1009,7 +1009,7 @@ export function initNotesCanvas(): void {
 				refreshBoldButtonState();
 			});
 			const resizeHandle = document.createElement("div");
-			resizeHandle.className = "note-resize-handle";
+			resizeHandle.className = "item-resize-handle";
 			resizeHandle.setAttribute("aria-hidden", "true");
 
 			note.appendChild(editor);
@@ -1087,7 +1087,7 @@ export function initNotesCanvas(): void {
 			image.draggable = false;
 
 			const resizeHandle = document.createElement("div");
-			resizeHandle.className = "image-resize-handle";
+			resizeHandle.className = "item-resize-handle";
 			resizeHandle.setAttribute("aria-hidden", "true");
 
 			imageItem.appendChild(image);

@@ -90,11 +90,15 @@ body {
 	-webkit-touch-callout: none;
 }
 
-.note input {
+.note textarea {
 	width: 100%;
 	border: 0;
 	outline: 0;
 	padding: 0;
+	resize: none;
+	overflow: hidden;
+	min-height: 1.35em;
+	line-height: 1.35;
 	font: inherit;
 	background: transparent;
 	color: #f5f5f5;
@@ -104,7 +108,7 @@ body {
 	-webkit-touch-callout: default;
 }
 
-.note input:disabled {
+.note textarea:disabled {
 	opacity: 1;
 	color: #f5f5f5;
 	cursor: move;
@@ -115,12 +119,12 @@ body {
 	cursor: default;
 }
 
-.note.is-editing input {
+.note.is-editing textarea {
 	pointer-events: auto;
 	cursor: text;
 }
 
-.note input::placeholder {
+.note textarea::placeholder {
 	color: #8b8b8b;
 }
 

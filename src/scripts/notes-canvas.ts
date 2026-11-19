@@ -228,12 +228,20 @@ export function initNotesCanvas(): void {
 		}
 	}
 
-	function exitInlineEditMode(container: HTMLElement, input: HTMLInputElement): void {
+	function exitInlineEditMode(
+		container: HTMLElement,
+		input: HTMLInputElement | HTMLTextAreaElement,
+	): void {
 		input.selectionStart = 0;
 		input.selectionEnd = 0;
 		input.disabled = true;
 		container.classList.remove("is-editing");
 		clearBrowserSelection();
+	}
+
+	function autoSizeNoteTextarea(textarea: HTMLTextAreaElement): void {
+		textarea.style.height = "0px";
+		textarea.style.height = `${textarea.scrollHeight}px`;
 	}
 
 	function startGroupEditingById(groupId: string): void {
@@ -260,7 +268,7 @@ export function initNotesCanvas(): void {
 
 	function makeDraggable(element: HTMLElement, item: CanvasItem): void {
 		interact(element).draggable({
-			ignoreFrom: "input",
+			ignoreFrom: "input, textarea",
 			listeners: {
 				start() {
 					closeContextMenu();
@@ -296,39 +304,43 @@ export function initNotesCanvas(): void {
 		if (item.type === "note") {
 			const note = document.createElement("div");
 			note.className = "note item";
-			const input = document.createElement("input");
-			input.type = "text";
-			input.placeholder = "Write a note…";
-			input.value = item.text;
-			input.setAttribute("aria-label", "Note content");
-			input.disabled = true;
-			input.addEventListener("input", () => {
-				item.text = input.value;
+			const textarea = document.createElement("textarea");
+			textarea.placeholder = "Write a note…";
+			textarea.value = item.text;
+			textarea.rows = 1;
+			textarea.setAttribute("aria-label", "Note content");
+			textarea.disabled = true;
+			textarea.addEventListener("input", () => {
+				autoSizeNoteTextarea(textarea);
+				item.text = textarea.value;
 			});
 			note.addEventListener("dblclick", (event) => {
 				event.preventDefault();
 				event.stopPropagation();
 				note.classList.add("is-editing");
-				input.disabled = false;
-				input.focus();
-				input.select();
+				textarea.disabled = false;
+				textarea.focus();
+				textarea.select();
+				autoSizeNoteTextarea(textarea);
 			});
-			input.addEventListener("blur", () => {
-				exitInlineEditMode(note, input);
+			textarea.addEventListener("blur", () => {
+				exitInlineEditMode(note, textarea);
 			});
-			input.addEventListener("keydown", (event) => {
-				if (event.key === "Enter" || event.key === "Escape") {
-					input.blur();
+			textarea.addEventListener("keydown", (event) => {
+				if (event.key === "Escape") {
+					textarea.blur();
 				}
 			});
-			note.appendChild(input);
+			note.appendChild(textarea);
 			element = note;
+			queueMicrotask(() => autoSizeNoteTextarea(textarea));
 
 			if (focusInput) {
 				queueMicrotask(() => {
 					note.classList.add("is-editing");
-					input.disabled = false;
-					input.focus();
+					textarea.disabled = false;
+					textarea.focus();
+					autoSizeNoteTextarea(textarea);
 				});
 			}
 		} else {

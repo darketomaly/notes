@@ -166,10 +166,19 @@ export function initNotesCanvas(): void {
 	const rootBoard = createBoard("Home");
 	const boardStack: Board[] = [rootBoard];
 	const noteElements = new Map<string, HTMLElement>();
+	const itemElements = new Map<string, HTMLElement>();
 	let connectionPreviewFromNoteId: string | null = null;
 	let connectionPreviewMousePoint: Point | null = null;
 	let activeRichEditor: HTMLElement | null = null;
 	let activeRichNote: NoteItem | null = null;
+	const selectedItemIds = new Set<string>();
+	const marqueeBox = document.createElement("div");
+	marqueeBox.className = "selection-marquee";
+	marqueeBox.hidden = true;
+	dom.canvas.appendChild(marqueeBox);
+	let marqueeStartPoint: Point | null = null;
+	let marqueeCurrentPoint: Point | null = null;
+	let suppressNextCanvasClick = false;
 
 	function currentBoard(): Board {
 		return boardStack[boardStack.length - 1];
@@ -457,6 +466,122 @@ export function initNotesCanvas(): void {
 		dom.connectionPreview.setAttribute("visibility", "hidden");
 	}
 
+	function refreshSelectedItemUI(): void {
+		for (const [id, element] of itemElements.entries()) {
+			element.classList.toggle("is-selected", selectedItemIds.has(id));
+		}
+	}
+
+	function setSingleSelectedItem(id: string | null): void {
+		selectedItemIds.clear();
+		if (id) {
+			selectedItemIds.add(id);
+		}
+		refreshSelectedItemUI();
+	}
+
+	function setSelectedItems(ids: Set<string>): void {
+		selectedItemIds.clear();
+		for (const id of ids) {
+			selectedItemIds.add(id);
+		}
+		refreshSelectedItemUI();
+	}
+
+	function getMarqueeBounds(from: Point, to: Point): {
+		left: number;
+		top: number;
+		right: number;
+		bottom: number;
+	} {
+		return {
+			left: Math.min(from.x, to.x),
+			top: Math.min(from.y, to.y),
+			right: Math.max(from.x, to.x),
+			bottom: Math.max(from.y, to.y),
+		};
+	}
+
+	function updateMarqueeVisual(): void {
+		if (!marqueeStartPoint || !marqueeCurrentPoint) {
+			marqueeBox.hidden = true;
+			return;
+		}
+
+		const bounds = getMarqueeBounds(marqueeStartPoint, marqueeCurrentPoint);
+		marqueeBox.hidden = false;
+		marqueeBox.style.left = `${bounds.left}px`;
+		marqueeBox.style.top = `${bounds.top}px`;
+		marqueeBox.style.width = `${Math.max(1, bounds.right - bounds.left)}px`;
+		marqueeBox.style.height = `${Math.max(1, bounds.bottom - bounds.top)}px`;
+	}
+
+	function updateMarqueeSelection(): void {
+		if (!marqueeStartPoint || !marqueeCurrentPoint) {
+			return;
+		}
+
+		const bounds = getMarqueeBounds(marqueeStartPoint, marqueeCurrentPoint);
+		const nextSelected = new Set<string>();
+
+		for (const [id, element] of itemElements.entries()) {
+			const left = element.offsetLeft;
+			const top = element.offsetTop;
+			const right = left + element.offsetWidth;
+			const bottom = top + element.offsetHeight;
+			const intersects =
+				right >= bounds.left &&
+				left <= bounds.right &&
+				bottom >= bounds.top &&
+				top <= bounds.bottom;
+			if (intersects) {
+				nextSelected.add(id);
+			}
+		}
+
+		setSelectedItems(nextSelected);
+	}
+
+	function stopMarqueeSelection(): void {
+		marqueeStartPoint = null;
+		marqueeCurrentPoint = null;
+		marqueeBox.hidden = true;
+	}
+
+	function removeNoteById(noteId: string): boolean {
+		const index = currentBoard().items.findIndex(
+			(item) => item.type === "note" && item.id === noteId,
+		);
+		if (index === -1) {
+			return false;
+		}
+
+		currentBoard().items.splice(index, 1);
+		currentBoard().connections = currentBoard().connections.filter(
+			(connection) =>
+				connection.fromNoteId !== noteId && connection.toNoteId !== noteId,
+		);
+
+		if (connectionPreviewFromNoteId === noteId) {
+			clearConnectionPreview();
+		}
+		selectedItemIds.delete(noteId);
+		return true;
+	}
+
+	function removeGroupById(groupId: string): boolean {
+		const index = currentBoard().items.findIndex(
+			(item) => item.type === "group" && item.id === groupId,
+		);
+		if (index === -1) {
+			return false;
+		}
+
+		currentBoard().items.splice(index, 1);
+		selectedItemIds.delete(groupId);
+		return true;
+	}
+
 	function renderConnections(): void {
 		const board = currentBoard();
 		dom.connectionsPermanent.replaceChildren();
@@ -564,32 +689,65 @@ export function initNotesCanvas(): void {
 	}
 
 	function makeDraggable(element: HTMLElement, item: CanvasItem): void {
+		let draggedIds: string[] = [item.id];
+
 		interact(element).draggable({
 			ignoreFrom: "input, textarea, [contenteditable='true']",
 			listeners: {
 				start() {
 					closeContextMenu();
+					draggedIds =
+						selectedItemIds.size > 1 && selectedItemIds.has(item.id)
+							? Array.from(selectedItemIds)
+							: [item.id];
 				},
 				move(event) {
 					if (!(event.target instanceof HTMLElement)) {
 						return;
 					}
 
-					const target = event.target;
-					const width = target.offsetWidth || NOTE_WIDTH;
-					const height = target.offsetHeight || NOTE_HEIGHT;
-					const clamped = clampToCanvas(
-						dom.canvas,
-						item.x + event.dx,
-						item.y + event.dy,
-						width,
-						height,
-					);
+					const canvasBounds = dom.canvas.getBoundingClientRect();
+					let appliedDx = event.dx;
+					let appliedDy = event.dy;
+					let minDx = Number.NEGATIVE_INFINITY;
+					let maxDx = Number.POSITIVE_INFINITY;
+					let minDy = Number.NEGATIVE_INFINITY;
+					let maxDy = Number.POSITIVE_INFINITY;
 
-					item.x = clamped.x;
-					item.y = clamped.y;
-					target.style.left = `${item.x}px`;
-					target.style.top = `${item.y}px`;
+					const draggedItems: Array<{ data: CanvasItem; element: HTMLElement }> = [];
+					for (const id of draggedIds) {
+						const data = currentBoard().items.find((candidate) => candidate.id === id);
+						const selectedElement = itemElements.get(id);
+						if (!data || !selectedElement) {
+							continue;
+						}
+
+						draggedItems.push({ data, element: selectedElement });
+						const width = selectedElement.offsetWidth || NOTE_WIDTH;
+						const height = selectedElement.offsetHeight || NOTE_HEIGHT;
+						const itemMinDx = EDGE_PADDING - data.x;
+						const itemMaxDx = canvasBounds.width - width - EDGE_PADDING - data.x;
+						const itemMinDy = EDGE_PADDING - data.y;
+						const itemMaxDy = canvasBounds.height - height - EDGE_PADDING - data.y;
+						minDx = Math.max(minDx, itemMinDx);
+						maxDx = Math.min(maxDx, itemMaxDx);
+						minDy = Math.max(minDy, itemMinDy);
+						maxDy = Math.min(maxDy, itemMaxDy);
+					}
+
+					if (draggedItems.length === 0) {
+						return;
+					}
+
+					appliedDx = Math.max(minDx, Math.min(maxDx, appliedDx));
+					appliedDy = Math.max(minDy, Math.min(maxDy, appliedDy));
+
+					for (const dragged of draggedItems) {
+						dragged.data.x += appliedDx;
+						dragged.data.y += appliedDy;
+						dragged.element.style.left = `${dragged.data.x}px`;
+						dragged.element.style.top = `${dragged.data.y}px`;
+					}
 					renderConnections();
 					refreshConnectionPreview();
 				},
@@ -746,6 +904,7 @@ export function initNotesCanvas(): void {
 			}, 260);
 		}
 		dom.canvas.appendChild(element);
+		itemElements.set(item.id, element);
 		if (item.type === "note") {
 			noteElements.set(item.id, element);
 		}
@@ -756,6 +915,7 @@ export function initNotesCanvas(): void {
 		closeContextMenu();
 		hideTextToolbar();
 		noteElements.clear();
+		itemElements.clear();
 		for (const element of dom.canvas.querySelectorAll(".item")) {
 			element.remove();
 		}
@@ -764,6 +924,7 @@ export function initNotesCanvas(): void {
 		}
 		renderConnections();
 		refreshConnectionPreview();
+		refreshSelectedItemUI();
 		refreshBoardHeader();
 	}
 
@@ -889,7 +1050,35 @@ export function initNotesCanvas(): void {
 	});
 
 	dom.canvas.addEventListener("click", (event) => {
+		if (suppressNextCanvasClick) {
+			suppressNextCanvasClick = false;
+			return;
+		}
+
 		if (!connectionPreviewFromNoteId) {
+			const target = event.target instanceof HTMLElement ? event.target : null;
+			if (target && (target.closest("#context-menu") || target.closest("#text-toolbar"))) {
+				return;
+			}
+
+			const noteTarget = target?.closest(".note");
+			const groupTarget = target?.closest(".group-item");
+			if (noteTarget instanceof HTMLElement && !noteTarget.classList.contains("is-editing")) {
+				const noteId = noteTarget.dataset.itemId;
+				if (noteId && findNoteInCurrentBoard(noteId)) {
+					setSingleSelectedItem(noteId);
+					return;
+				}
+			}
+			if (groupTarget instanceof HTMLElement && !groupTarget.classList.contains("is-editing")) {
+				const groupId = groupTarget.dataset.itemId;
+				if (groupId && findGroupInCurrentBoard(groupId)) {
+					setSingleSelectedItem(groupId);
+					return;
+				}
+			}
+
+			setSingleSelectedItem(null);
 			return;
 		}
 
@@ -933,6 +1122,50 @@ export function initNotesCanvas(): void {
 
 		clearConnectionPreview();
 		renderConnections();
+	});
+
+	dom.canvas.addEventListener("pointerdown", (event) => {
+		if (event.button !== 0) {
+			return;
+		}
+		if (connectionPreviewFromNoteId) {
+			return;
+		}
+
+		const target = event.target instanceof Element ? event.target : null;
+		if (
+			!target ||
+			target.closest(".item") ||
+			target.closest("#context-menu") ||
+			target.closest("#text-toolbar") ||
+			target.closest(".toolbar") ||
+			target.closest("[data-connection-id]")
+		) {
+			return;
+		}
+
+		marqueeStartPoint = getRelativePoint(dom.canvas, event.clientX, event.clientY);
+		marqueeCurrentPoint = marqueeStartPoint;
+		updateMarqueeVisual();
+		setSelectedItems(new Set<string>());
+	});
+
+	document.addEventListener("pointermove", (event) => {
+		if (!marqueeStartPoint) {
+			return;
+		}
+
+		marqueeCurrentPoint = getRelativePoint(dom.canvas, event.clientX, event.clientY);
+		updateMarqueeVisual();
+		updateMarqueeSelection();
+	});
+
+	document.addEventListener("pointerup", () => {
+		if (!marqueeStartPoint) {
+			return;
+		}
+		suppressNextCanvasClick = true;
+		stopMarqueeSelection();
 	});
 
 	dom.createNoteAction.addEventListener("click", () => {
@@ -1025,16 +1258,10 @@ export function initNotesCanvas(): void {
 			return;
 		}
 
-		const index = currentBoard().items.findIndex(
-			(item) => item.type === "group" && item.id === contextMenuState.groupId,
-		);
-
-		if (index === -1) {
+		if (!removeGroupById(contextMenuState.groupId)) {
 			closeContextMenu();
 			return;
 		}
-
-		currentBoard().items.splice(index, 1);
 		renderBoard();
 		closeContextMenu();
 	});
@@ -1044,23 +1271,9 @@ export function initNotesCanvas(): void {
 			return;
 		}
 
-		const index = currentBoard().items.findIndex(
-			(item) => item.type === "note" && item.id === contextMenuState.noteId,
-		);
-
-		if (index === -1) {
+		if (!removeNoteById(contextMenuState.noteId)) {
 			closeContextMenu();
 			return;
-		}
-
-		const noteId = contextMenuState.noteId;
-		currentBoard().items.splice(index, 1);
-		currentBoard().connections = currentBoard().connections.filter(
-			(connection) =>
-				connection.fromNoteId !== noteId && connection.toNoteId !== noteId,
-		);
-		if (connectionPreviewFromNoteId === noteId) {
-			clearConnectionPreview();
 		}
 		renderBoard();
 		closeContextMenu();
@@ -1144,6 +1357,40 @@ export function initNotesCanvas(): void {
 			}
 			closeContextMenu();
 			clearConnectionPreview();
+			setSingleSelectedItem(null);
+			stopMarqueeSelection();
+		}
+
+		if (event.key === "Delete") {
+			const target = event.target;
+			if (
+				activeRichEditor ||
+				(target instanceof HTMLElement &&
+					(target.tagName === "INPUT" ||
+						target.tagName === "TEXTAREA" ||
+						target.isContentEditable))
+			) {
+				return;
+			}
+			if (selectedItemIds.size === 0) {
+				return;
+			}
+
+			event.preventDefault();
+			let removedAny = false;
+			const selectedIds = Array.from(selectedItemIds);
+			for (const id of selectedIds) {
+				const item = currentBoard().items.find((candidate) => candidate.id === id);
+				if (!item) {
+					continue;
+				}
+				const removed = item.type === "note" ? removeNoteById(id) : removeGroupById(id);
+				removedAny = removedAny || removed;
+			}
+			if (removedAny) {
+				selectedItemIds.clear();
+				renderBoard();
+			}
 		}
 	});
 

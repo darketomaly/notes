@@ -28,7 +28,7 @@ interface BaseItem {
 
 interface NoteItem extends BaseItem {
 	type: "note";
-	text: string;
+	htmlContent: string;
 }
 
 interface GroupItem extends BaseItem {
@@ -56,6 +56,8 @@ interface DomRefs {
 	boardBreadcrumbs: HTMLElement;
 	connectionsPermanent: SVGGElement;
 	connectionPreview: SVGLineElement;
+	textToolbar: HTMLElement;
+	boldAction: HTMLButtonElement;
 }
 
 type ContextMenuState =
@@ -110,6 +112,8 @@ export function initNotesCanvas(): void {
 	const boardBreadcrumbs = document.getElementById("board-breadcrumbs");
 	const connectionsPermanent = document.getElementById("connections-permanent");
 	const connectionPreview = document.getElementById("connection-preview");
+	const textToolbar = document.getElementById("text-toolbar");
+	const boldAction = document.getElementById("bold-action");
 
 	if (
 		!(canvas instanceof HTMLElement) ||
@@ -123,7 +127,9 @@ export function initNotesCanvas(): void {
 		!(deleteNoteAction instanceof HTMLButtonElement) ||
 		!(boardBreadcrumbs instanceof HTMLElement) ||
 		!(connectionsPermanent instanceof SVGGElement) ||
-		!(connectionPreview instanceof SVGLineElement)
+		!(connectionPreview instanceof SVGLineElement) ||
+		!(textToolbar instanceof HTMLElement) ||
+		!(boldAction instanceof HTMLButtonElement)
 	) {
 		return;
 	}
@@ -146,6 +152,8 @@ export function initNotesCanvas(): void {
 		boardBreadcrumbs,
 		connectionsPermanent,
 		connectionPreview,
+		textToolbar,
+		boldAction,
 	};
 
 	let contextMenuState: ContextMenuState | null = null;
@@ -154,6 +162,7 @@ export function initNotesCanvas(): void {
 	const noteElements = new Map<string, HTMLElement>();
 	let connectionPreviewFromNoteId: string | null = null;
 	let connectionPreviewMousePoint: Point | null = null;
+	let activeRichEditor: HTMLElement | null = null;
 
 	function currentBoard(): Board {
 		return boardStack[boardStack.length - 1];
@@ -264,6 +273,56 @@ export function initNotesCanvas(): void {
 		const actionHeight = 38;
 		const verticalPadding = 12;
 		return Math.max(52, visibleActions * actionHeight + verticalPadding);
+	}
+
+	function hideTextToolbar(): void {
+		dom.textToolbar.hidden = true;
+		activeRichEditor = null;
+		dom.boldAction.classList.remove("is-active");
+	}
+
+	function isSelectionInsideEditor(editor: HTMLElement): boolean {
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0) {
+			return false;
+		}
+
+		const range = selection.getRangeAt(0);
+		const startNode = range.startContainer;
+		const endNode = range.endContainer;
+		return editor.contains(startNode) && editor.contains(endNode);
+	}
+
+	function positionTextToolbar(editor: HTMLElement): void {
+		const canvasRect = dom.canvas.getBoundingClientRect();
+		const editorRect = editor.getBoundingClientRect();
+		const left = editorRect.left - canvasRect.left + editorRect.width / 2;
+		const top = editorRect.top - canvasRect.top - 8;
+		dom.textToolbar.style.left = `${left}px`;
+		dom.textToolbar.style.top = `${top}px`;
+	}
+
+	function refreshBoldButtonState(): void {
+		if (!activeRichEditor || !isSelectionInsideEditor(activeRichEditor)) {
+			dom.boldAction.classList.remove("is-active");
+			return;
+		}
+		const isBold = document.queryCommandState("bold");
+		dom.boldAction.classList.toggle("is-active", Boolean(isBold));
+	}
+
+	function showTextToolbarFor(editor: HTMLElement): void {
+		activeRichEditor = editor;
+		positionTextToolbar(editor);
+		dom.textToolbar.hidden = false;
+		refreshBoldButtonState();
+	}
+
+	function normalizeRichEditorContent(editor: HTMLElement): void {
+		const text = editor.textContent ?? "";
+		if (!text.trim()) {
+			editor.innerHTML = "";
+		}
 	}
 
 	function getElementCenter(element: HTMLElement): Point {
@@ -383,11 +442,6 @@ export function initNotesCanvas(): void {
 		clearBrowserSelection();
 	}
 
-	function autoSizeNoteTextarea(textarea: HTMLTextAreaElement): void {
-		textarea.style.height = "0px";
-		textarea.style.height = `${textarea.scrollHeight}px`;
-	}
-
 	function startGroupEditingById(groupId: string): void {
 		for (const candidate of dom.canvas.querySelectorAll(".group-item")) {
 			if (!(candidate instanceof HTMLElement)) {
@@ -412,7 +466,7 @@ export function initNotesCanvas(): void {
 
 	function makeDraggable(element: HTMLElement, item: CanvasItem): void {
 		interact(element).draggable({
-			ignoreFrom: "input, textarea",
+			ignoreFrom: "input, textarea, [contenteditable='true']",
 			listeners: {
 				start() {
 					closeContextMenu();
@@ -450,47 +504,68 @@ export function initNotesCanvas(): void {
 		if (item.type === "note") {
 			const note = document.createElement("div");
 			note.className = "note item";
-			const textarea = document.createElement("textarea");
-			textarea.placeholder = "Write a note…";
-			textarea.value = item.text;
-			textarea.rows = 1;
-			textarea.setAttribute("aria-label", "Note content");
-			textarea.disabled = true;
-			textarea.addEventListener("input", () => {
-				autoSizeNoteTextarea(textarea);
-				item.text = textarea.value;
+			const editor = document.createElement("div");
+			editor.className = "note-editor";
+			editor.setAttribute("aria-label", "Note content");
+			editor.setAttribute("data-placeholder", "Write a note…");
+			editor.contentEditable = "false";
+			editor.innerHTML = item.htmlContent;
+			editor.addEventListener("input", () => {
+				normalizeRichEditorContent(editor);
+				item.htmlContent = editor.innerHTML;
 				renderConnections();
 				refreshConnectionPreview();
+				positionTextToolbar(editor);
+				refreshBoldButtonState();
 			});
 			note.addEventListener("dblclick", (event) => {
 				event.preventDefault();
 				event.stopPropagation();
 				note.classList.add("is-editing");
-				textarea.disabled = false;
-				textarea.focus();
-				textarea.select();
-				autoSizeNoteTextarea(textarea);
+				editor.contentEditable = "true";
+				editor.focus();
+				showTextToolbarFor(editor);
+
+				const selection = window.getSelection();
+				if (selection) {
+					const range = document.createRange();
+					range.selectNodeContents(editor);
+					selection.removeAllRanges();
+					selection.addRange(range);
+				}
 			});
-			textarea.addEventListener("blur", () => {
-				exitInlineEditMode(note, textarea);
+			editor.addEventListener("blur", () => {
+				normalizeRichEditorContent(editor);
+				editor.contentEditable = "false";
+				note.classList.remove("is-editing");
+				item.htmlContent = editor.innerHTML;
+				clearBrowserSelection();
+				hideTextToolbar();
 				renderConnections();
 				refreshConnectionPreview();
 			});
-			textarea.addEventListener("keydown", (event) => {
+			editor.addEventListener("keydown", (event) => {
 				if (event.key === "Escape") {
-					textarea.blur();
+					editor.blur();
 				}
 			});
-			note.appendChild(textarea);
+			editor.addEventListener("keyup", () => {
+				refreshBoldButtonState();
+				positionTextToolbar(editor);
+			});
+			editor.addEventListener("mouseup", () => {
+				refreshBoldButtonState();
+				positionTextToolbar(editor);
+			});
+			note.appendChild(editor);
 			element = note;
-			queueMicrotask(() => autoSizeNoteTextarea(textarea));
 
 			if (focusInput) {
 				queueMicrotask(() => {
 					note.classList.add("is-editing");
-					textarea.disabled = false;
-					textarea.focus();
-					autoSizeNoteTextarea(textarea);
+					editor.contentEditable = "true";
+					editor.focus();
+					showTextToolbarFor(editor);
 				});
 			}
 		} else {
@@ -555,6 +630,7 @@ export function initNotesCanvas(): void {
 
 	function renderBoard(): void {
 		closeContextMenu();
+		hideTextToolbar();
 		noteElements.clear();
 		for (const element of dom.canvas.querySelectorAll(".item")) {
 			element.remove();
@@ -574,7 +650,7 @@ export function initNotesCanvas(): void {
 			type: "note",
 			x: clamped.x,
 			y: clamped.y,
-			text: "",
+			htmlContent: "",
 		};
 		currentBoard().items.push(note);
 		renderItem(note, true);
@@ -826,8 +902,43 @@ export function initNotesCanvas(): void {
 		closeContextMenu();
 	});
 
+	dom.boldAction.addEventListener("mousedown", (event) => {
+		event.preventDefault();
+	});
+
+	dom.boldAction.addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		if (!activeRichEditor) {
+			return;
+		}
+		activeRichEditor.focus();
+		document.execCommand("bold");
+		activeRichEditor.dispatchEvent(new Event("input", { bubbles: true }));
+		refreshBoldButtonState();
+	});
+
+	document.addEventListener("selectionchange", () => {
+		if (!activeRichEditor) {
+			return;
+		}
+		refreshBoldButtonState();
+	});
+
 	document.addEventListener("pointerdown", (event) => {
 		const target = event.target;
+		if (activeRichEditor) {
+			const clickedInsideToolbar =
+				target instanceof HTMLElement && target.closest("#text-toolbar");
+			const clickedInsideEditor =
+				target instanceof Node && activeRichEditor.contains(target);
+
+			if (!clickedInsideToolbar && !clickedInsideEditor) {
+				activeRichEditor.blur();
+				hideTextToolbar();
+			}
+		}
+
 		if (
 			connectionPreviewFromNoteId &&
 			!(target instanceof HTMLElement && target.closest(".note"))
@@ -842,6 +953,9 @@ export function initNotesCanvas(): void {
 
 	document.addEventListener("keydown", (event) => {
 		if (event.key === "Escape") {
+			if (activeRichEditor) {
+				activeRichEditor.blur();
+			}
 			closeContextMenu();
 			clearConnectionPreview();
 		}

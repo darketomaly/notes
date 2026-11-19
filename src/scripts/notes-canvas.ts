@@ -29,6 +29,7 @@ interface BaseItem {
 interface NoteItem extends BaseItem {
 	type: "note";
 	htmlContent: string;
+	typingBold: boolean;
 }
 
 interface GroupItem extends BaseItem {
@@ -168,6 +169,7 @@ export function initNotesCanvas(): void {
 	let connectionPreviewFromNoteId: string | null = null;
 	let connectionPreviewMousePoint: Point | null = null;
 	let activeRichEditor: HTMLElement | null = null;
+	let activeRichNote: NoteItem | null = null;
 
 	function currentBoard(): Board {
 		return boardStack[boardStack.length - 1];
@@ -287,6 +289,7 @@ export function initNotesCanvas(): void {
 	function hideTextToolbar(): void {
 		dom.textToolbar.hidden = true;
 		activeRichEditor = null;
+		activeRichNote = null;
 		dom.boldAction.classList.remove("is-active");
 	}
 
@@ -320,8 +323,56 @@ export function initNotesCanvas(): void {
 		dom.boldAction.classList.toggle("is-active", Boolean(isBold));
 	}
 
-	function showTextToolbarFor(editor: HTMLElement): void {
+	function hasTextSelectionInEditor(editor: HTMLElement): boolean {
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0) {
+			return false;
+		}
+
+		const range = selection.getRangeAt(0);
+		return !range.collapsed && editor.contains(range.commonAncestorContainer);
+	}
+
+	function isCaretInsideTextNode(editor: HTMLElement): boolean {
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0) {
+			return false;
+		}
+
+		const range = selection.getRangeAt(0);
+		if (!range.collapsed) {
+			return false;
+		}
+
+		const startNode = range.startContainer;
+		return (
+			startNode.nodeType === Node.TEXT_NODE &&
+			editor.contains(startNode) &&
+			Boolean(startNode.textContent)
+		);
+	}
+
+	function syncEditorTypingBold(desiredBold: boolean): void {
+		if (!activeRichEditor) {
+			return;
+		}
+		if (!isSelectionInsideEditor(activeRichEditor)) {
+			return;
+		}
+		if (isCaretInsideTextNode(activeRichEditor)) {
+			refreshBoldButtonState();
+			return;
+		}
+		const current = Boolean(document.queryCommandState("bold"));
+		if (current !== desiredBold) {
+			document.execCommand("bold");
+		}
+		refreshBoldButtonState();
+	}
+
+	function showTextToolbarFor(editor: HTMLElement, note: NoteItem): void {
 		activeRichEditor = editor;
+		activeRichNote = note;
 		positionTextToolbar(editor);
 		dom.textToolbar.hidden = false;
 		refreshBoldButtonState();
@@ -576,8 +627,9 @@ export function initNotesCanvas(): void {
 				note.classList.add("is-editing");
 				editor.contentEditable = "true";
 				editor.focus();
-				showTextToolbarFor(editor);
+				showTextToolbarFor(editor, item);
 				placeCaretNearPoint(editor, event.clientX, event.clientY);
+				syncEditorTypingBold(item.typingBold);
 			});
 			editor.addEventListener("blur", () => {
 				normalizeRichEditorContent(editor);
@@ -627,7 +679,8 @@ export function initNotesCanvas(): void {
 					note.classList.add("is-editing");
 					editor.contentEditable = "true";
 					editor.focus();
-					showTextToolbarFor(editor);
+					showTextToolbarFor(editor, item);
+					syncEditorTypingBold(item.typingBold);
 				});
 			}
 		} else {
@@ -728,6 +781,7 @@ export function initNotesCanvas(): void {
 			x: clamped.x,
 			y: clamped.y,
 			htmlContent: "",
+			typingBold: false,
 		};
 		currentBoard().items.push(note);
 		renderItem(note, true);
@@ -1037,12 +1091,16 @@ export function initNotesCanvas(): void {
 	dom.boldAction.addEventListener("click", (event) => {
 		event.preventDefault();
 		event.stopPropagation();
-		if (!activeRichEditor) {
+		if (!activeRichEditor || !activeRichNote) {
 			return;
 		}
 		activeRichEditor.focus();
+		const hasSelectedText = hasTextSelectionInEditor(activeRichEditor);
 		document.execCommand("bold");
 		activeRichEditor.dispatchEvent(new Event("input", { bubbles: true }));
+		if (!hasSelectedText) {
+			activeRichNote.typingBold = Boolean(document.queryCommandState("bold"));
+		}
 		refreshBoldButtonState();
 	});
 

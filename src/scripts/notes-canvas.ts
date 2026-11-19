@@ -5,6 +5,7 @@ const NOTE_HEIGHT = 46;
 const GROUP_WIDTH = 150;
 const GROUP_HEIGHT = 44;
 const EDGE_PADDING = 12;
+const DRAG_SNAP_DISTANCE = 14;
 const CONTEXT_MENU_WIDTH = 170;
 const CONTEXT_MENU_HEIGHT = 84;
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -502,6 +503,62 @@ export function initNotesCanvas(): void {
 		};
 	}
 
+	function getSnapTargetCenters(itemId: string): Point[] {
+		const centers: Point[] = [];
+		for (const [otherItemId, element] of itemElements.entries()) {
+			if (otherItemId === itemId) {
+				continue;
+			}
+			centers.push(getElementCenter(element));
+		}
+
+		return centers;
+	}
+
+	function getSnappedDragDelta(
+		item: CanvasItem,
+		element: HTMLElement,
+		proposedDx: number,
+		proposedDy: number,
+	): { dx: number; dy: number } {
+		const snapTargets = getSnapTargetCenters(item.id);
+		if (snapTargets.length === 0) {
+			return { dx: proposedDx, dy: proposedDy };
+		}
+
+		const currentCenter = getElementCenter(element);
+		const proposedCenter = {
+			x: currentCenter.x + proposedDx,
+			y: currentCenter.y + proposedDy,
+		};
+
+		let bestSnapDx: number | null = null;
+		let bestSnapDy: number | null = null;
+
+		for (const targetCenter of snapTargets) {
+			const xDelta = targetCenter.x - proposedCenter.x;
+			if (
+				Math.abs(xDelta) <= DRAG_SNAP_DISTANCE &&
+				(bestSnapDx === null || Math.abs(xDelta) < Math.abs(bestSnapDx))
+			) {
+				bestSnapDx = xDelta;
+			}
+
+			const yDelta = targetCenter.y - proposedCenter.y;
+			if (
+				Math.abs(yDelta) <= DRAG_SNAP_DISTANCE &&
+				(bestSnapDy === null || Math.abs(yDelta) < Math.abs(bestSnapDy))
+			) {
+				bestSnapDy = yDelta;
+			}
+		}
+
+		return {
+			dx: proposedDx + (bestSnapDx ?? 0),
+			dy: proposedDy + (bestSnapDy ?? 0),
+		};
+	}
+
 	function getClosestEdgeAnchor(element: HTMLElement, targetPoint: Point): Point {
 		const center = getElementCenter(element);
 		const dx = targetPoint.x - center.x;
@@ -831,6 +888,16 @@ export function initNotesCanvas(): void {
 
 					appliedDx = Math.max(minDx, Math.min(maxDx, appliedDx));
 					appliedDy = Math.max(minDy, Math.min(maxDy, appliedDy));
+					if (draggedItems.length === 1) {
+						const snapped = getSnappedDragDelta(
+							draggedItems[0].data,
+							draggedItems[0].element,
+							appliedDx,
+							appliedDy,
+						);
+						appliedDx = Math.max(minDx, Math.min(maxDx, snapped.dx));
+						appliedDy = Math.max(minDy, Math.min(maxDy, snapped.dy));
+					}
 
 					for (const dragged of draggedItems) {
 						dragged.data.x += appliedDx;

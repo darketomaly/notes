@@ -41,19 +41,34 @@
 					#171717;
 			}
 
-			.hint {
+			.toolbar {
 				position: absolute;
 				top: 1rem;
 				left: 1rem;
+				z-index: 5;
+				display: flex;
+				align-items: center;
+				gap: 0.45rem;
+			}
+
+			.back-button {
+				border: 1px solid #3b3b3b;
+				border-radius: 0.5rem;
+				background: #272727;
+				color: #ebebeb;
+				padding: 0.35rem 0.55rem;
+				font: inherit;
+				cursor: pointer;
+			}
+
+			.board-label {
 				margin: 0;
-				padding: 0.4rem 0.6rem;
+				padding: 0.35rem 0.55rem;
 				background: rgba(0, 0, 0, 0.35);
 				border: 1px solid #2f2f2f;
 				border-radius: 0.5rem;
 				font-size: 0.85rem;
 				letter-spacing: 0.01em;
-				user-select: none;
-				pointer-events: none;
 			}
 
 			:global(.note) {
@@ -93,6 +108,27 @@
 				cursor: grabbing;
 			}
 
+			:global(.group-item) {
+				position: absolute;
+				min-width: 150px;
+				border: 1px solid #5a5a5a;
+				border-radius: 0.6rem;
+				padding: 0.55rem 0.7rem;
+				font: inherit;
+				text-align: left;
+				color: #f2f2f2;
+				background: #2c2c2c;
+				box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+				cursor: grab;
+				user-select: none;
+				-webkit-user-select: none;
+				-webkit-touch-callout: none;
+			}
+
+			:global(.group-item:active) {
+				cursor: grabbing;
+			}
+
 			.context-menu {
 				position: absolute;
 				z-index: 20;
@@ -124,51 +160,47 @@
 	</head>
 	<body>
 		<main class="canvas" id="canvas" aria-label="Notes canvas">
-			<p class="hint">Double-click anywhere to create a note</p>
+			<div class="toolbar">
+				<button class="back-button" id="back-button" type="button" hidden>Back</button>
+				<p class="board-label" id="board-label">Home</p>
+			</div>
 			<div class="context-menu" id="context-menu" hidden>
 				<button type="button" id="create-note-action">Create note</button>
+				<button type="button" id="create-group-action">Create note group</button>
 			</div>
 		</main>
 		<script type="module">
 			import interact from "interactjs";
 
 			const NOTE_WIDTH = 240;
+			const NOTE_HEIGHT = 46;
+			const GROUP_WIDTH = 150;
+			const GROUP_HEIGHT = 44;
 			const EDGE_PADDING = 12;
 			const canvas = document.getElementById("canvas");
 			const contextMenu = document.getElementById("context-menu");
 			const createNoteAction = document.getElementById("create-note-action");
+			const createGroupAction = document.getElementById("create-group-action");
+			const backButton = document.getElementById("back-button");
+			const boardLabel = document.getElementById("board-label");
 			let contextPoint = null;
 
-			function createNoteAt(positionX, positionY) {
-				if (!(canvas instanceof HTMLElement)) {
-					return;
+			function createId() {
+				if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+					return crypto.randomUUID();
 				}
+				return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			}
 
-				const bounds = canvas.getBoundingClientRect();
-				const maxLeft = Math.max(
-					EDGE_PADDING,
-					bounds.width - NOTE_WIDTH - EDGE_PADDING,
-				);
-				const left = Math.min(Math.max(positionX, EDGE_PADDING), maxLeft);
-				const top = Math.max(positionY, EDGE_PADDING);
+			function createBoard(title) {
+				return { id: createId(), title, items: [] };
+			}
 
-				if (!Number.isFinite(left) || !Number.isFinite(top)) {
-					return;
-				}
+			const rootBoard = createBoard("Home");
+			const boardStack = [rootBoard];
 
-				const note = document.createElement("div");
-				note.className = "note";
-				note.style.left = `${left}px`;
-				note.style.top = `${top}px`;
-
-				const input = document.createElement("input");
-				input.type = "text";
-				input.placeholder = "Write a note…";
-				input.setAttribute("aria-label", "Note content");
-
-				note.appendChild(input);
-				canvas.appendChild(note);
-				input.focus();
+			function currentBoard() {
+				return boardStack[boardStack.length - 1];
 			}
 
 			function closeContextMenu() {
@@ -177,65 +209,191 @@
 				}
 			}
 
-			interact(".note").draggable({
-				ignoreFrom: "input",
-				listeners: {
-					move(event) {
-						const target = event.target;
-						if (!(target instanceof HTMLElement)) {
-							return;
-						}
+			function getRelativePoint(clientX, clientY) {
+				if (!(canvas instanceof HTMLElement)) {
+					return { x: EDGE_PADDING, y: EDGE_PADDING };
+				}
+				const bounds = canvas.getBoundingClientRect();
+				return { x: clientX - bounds.left, y: clientY - bounds.top };
+			}
 
-						const x = (Number(target.dataset.x) || 0) + event.dx;
-						const y = (Number(target.dataset.y) || 0) + event.dy;
+			function clampToCanvas(positionX, positionY, itemWidth, itemHeight) {
+				if (!(canvas instanceof HTMLElement)) {
+					return { x: EDGE_PADDING, y: EDGE_PADDING };
+				}
+				const bounds = canvas.getBoundingClientRect();
+				const maxLeft = Math.max(EDGE_PADDING, bounds.width - itemWidth - EDGE_PADDING);
+				const maxTop = Math.max(EDGE_PADDING, bounds.height - itemHeight - EDGE_PADDING);
+				return {
+					x: Math.min(Math.max(positionX, EDGE_PADDING), maxLeft),
+					y: Math.min(Math.max(positionY, EDGE_PADDING), maxTop),
+				};
+			}
 
-						target.style.transform = `translate(${x}px, ${y}px)`;
-						target.dataset.x = String(x);
-						target.dataset.y = String(y);
+			function refreshBoardHeader() {
+				if (boardLabel instanceof HTMLElement) {
+					boardLabel.textContent = boardStack.map((board) => board.title).join(" / ");
+				}
+				if (backButton instanceof HTMLButtonElement) {
+					backButton.hidden = boardStack.length === 1;
+				}
+			}
+
+			function makeDraggable(element, item) {
+				interact(element).draggable({
+					ignoreFrom: "input",
+					listeners: {
+						start() {
+							closeContextMenu();
+						},
+						move(event) {
+							if (!(event.target instanceof HTMLElement)) {
+								return;
+							}
+
+							const target = event.target;
+							const width = target.offsetWidth || NOTE_WIDTH;
+							const height = target.offsetHeight || NOTE_HEIGHT;
+							const clamped = clampToCanvas(
+								item.x + event.dx,
+								item.y + event.dy,
+								width,
+								height,
+							);
+							item.x = clamped.x;
+							item.y = clamped.y;
+							target.style.left = `${item.x}px`;
+							target.style.top = `${item.y}px`;
+						},
 					},
-				},
-			});
+				});
+			}
+
+			function renderItem(item, focusInput = false) {
+				if (!(canvas instanceof HTMLElement)) {
+					return;
+				}
+
+				let element;
+				if (item.type === "note") {
+					const note = document.createElement("div");
+					note.className = "note item";
+					const input = document.createElement("input");
+					input.type = "text";
+					input.placeholder = "Write a note…";
+					input.value = item.text;
+					input.setAttribute("aria-label", "Note content");
+					input.addEventListener("input", () => {
+						item.text = input.value;
+					});
+					note.appendChild(input);
+					element = note;
+					if (focusInput) {
+						queueMicrotask(() => input.focus());
+					}
+				} else {
+					const groupButton = document.createElement("button");
+					groupButton.type = "button";
+					groupButton.className = "group-item item";
+					groupButton.textContent = item.title;
+					groupButton.setAttribute("aria-label", `Open group ${item.title}`);
+					groupButton.addEventListener("dblclick", (event) => {
+						event.preventDefault();
+						event.stopPropagation();
+						boardStack.push(item.board);
+						renderBoard();
+					});
+					element = groupButton;
+				}
+
+				if (!element) {
+					return;
+				}
+
+				element.style.left = `${item.x}px`;
+				element.style.top = `${item.y}px`;
+				canvas.appendChild(element);
+				makeDraggable(element, item);
+			}
+
+			function renderBoard() {
+				if (!(canvas instanceof HTMLElement)) {
+					return;
+				}
+
+				closeContextMenu();
+				for (const element of canvas.querySelectorAll(".item")) {
+					element.remove();
+				}
+				for (const item of currentBoard().items) {
+					renderItem(item);
+				}
+				refreshBoardHeader();
+			}
+
+			function createNoteAt(positionX, positionY) {
+				const clamped = clampToCanvas(positionX, positionY, NOTE_WIDTH, NOTE_HEIGHT);
+				const note = {
+					id: createId(),
+					type: "note",
+					x: clamped.x,
+					y: clamped.y,
+					text: "",
+				};
+				currentBoard().items.push(note);
+				renderItem(note, true);
+			}
+
+			function createGroupAt(positionX, positionY) {
+				const clamped = clampToCanvas(positionX, positionY, GROUP_WIDTH, GROUP_HEIGHT);
+				const current = currentBoard();
+				const groupCount = current.items.filter((item) => item.type === "group").length + 1;
+				const group = {
+					id: createId(),
+					type: "group",
+					x: clamped.x,
+					y: clamped.y,
+					title: `Group ${groupCount}`,
+					board: createBoard(`Group ${groupCount}`),
+				};
+				current.items.push(group);
+				renderItem(group);
+			}
+
+			function canOpenCanvasMenu(eventTarget) {
+				return !(eventTarget instanceof HTMLElement && eventTarget.closest(".item"));
+			}
 
 			if (
 				canvas instanceof HTMLElement &&
 				contextMenu instanceof HTMLElement &&
-				createNoteAction instanceof HTMLButtonElement
+				createNoteAction instanceof HTMLButtonElement &&
+				createGroupAction instanceof HTMLButtonElement &&
+				backButton instanceof HTMLButtonElement
 			) {
 				canvas.addEventListener("dblclick", (event) => {
-					const target = event.target;
-					if (target instanceof HTMLElement && target.closest(".note")) {
+					if (!canOpenCanvasMenu(event.target)) {
 						return;
 					}
 
-					const bounds = canvas.getBoundingClientRect();
-					const relativeX =
-						typeof event.offsetX === "number" ? event.offsetX : event.clientX - bounds.left;
-					const relativeY =
-						typeof event.offsetY === "number" ? event.offsetY : event.clientY - bounds.top;
+					const relative = getRelativePoint(event.clientX, event.clientY);
 					closeContextMenu();
-					createNoteAt(relativeX, relativeY);
+					createNoteAt(relative.x, relative.y);
 				});
 
 				canvas.addEventListener("contextmenu", (event) => {
 					event.preventDefault();
-					const target = event.target;
 
-					if (target instanceof HTMLElement && target.closest(".note")) {
+					if (!canOpenCanvasMenu(event.target)) {
 						closeContextMenu();
 						return;
 					}
 
-					const bounds = canvas.getBoundingClientRect();
-					const relativeX = event.clientX - bounds.left;
-					const relativeY = event.clientY - bounds.top;
-					const menuWidth = 170;
-					const menuHeight = 52;
-					const menuLeft = Math.min(relativeX, bounds.width - menuWidth - EDGE_PADDING);
-					const menuTop = Math.min(relativeY, bounds.height - menuHeight - EDGE_PADDING);
-
-					contextPoint = { x: relativeX, y: relativeY };
-					contextMenu.style.left = `${Math.max(EDGE_PADDING, menuLeft)}px`;
-					contextMenu.style.top = `${Math.max(EDGE_PADDING, menuTop)}px`;
+					const relative = getRelativePoint(event.clientX, event.clientY);
+					const clampedMenu = clampToCanvas(relative.x, relative.y, 170, 84);
+					contextPoint = relative;
+					contextMenu.style.left = `${clampedMenu.x}px`;
+					contextMenu.style.top = `${clampedMenu.y}px`;
 					contextMenu.hidden = false;
 				});
 
@@ -243,9 +401,24 @@
 					if (!contextPoint) {
 						return;
 					}
-
 					createNoteAt(contextPoint.x, contextPoint.y);
 					closeContextMenu();
+				});
+
+				createGroupAction.addEventListener("click", () => {
+					if (!contextPoint) {
+						return;
+					}
+					createGroupAt(contextPoint.x, contextPoint.y);
+					closeContextMenu();
+				});
+
+				backButton.addEventListener("click", () => {
+					if (boardStack.length <= 1) {
+						return;
+					}
+					boardStack.pop();
+					renderBoard();
 				});
 
 				document.addEventListener("pointerdown", (event) => {
@@ -261,6 +434,10 @@
 						closeContextMenu();
 					}
 				});
+
+				renderBoard();
+			} else {
+				closeContextMenu();
 			}
 		</script>
 	</body>

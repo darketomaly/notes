@@ -229,7 +229,7 @@ body {
 	content: "";
 	position: absolute;
 	inset: 0;
-	background-image: var(--group-card-bg-image);
+	background-image: var(--group-item-bg-image, var(--group-card-bg-image));
 	background-size: cover;
 	background-position: center;
 	opacity: 0.32;

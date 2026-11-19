@@ -35,6 +35,7 @@ interface GroupItem extends BaseItem {
 	type: "group";
 	title: string;
 	board: Board;
+	backgroundImageUrl?: string;
 }
 
 interface Connection {
@@ -49,6 +50,7 @@ interface DomRefs {
 	createNoteAction: HTMLButtonElement;
 	createGroupAction: HTMLButtonElement;
 	renameGroupAction: HTMLButtonElement;
+	replaceGroupBgAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
 	connectNoteAction: HTMLButtonElement;
 	deleteConnectionAction: HTMLButtonElement;
@@ -105,6 +107,7 @@ export function initNotesCanvas(): void {
 	const createNoteAction = document.getElementById("create-note-action");
 	const createGroupAction = document.getElementById("create-group-action");
 	const renameGroupAction = document.getElementById("rename-group-action");
+	const replaceGroupBgAction = document.getElementById("replace-group-bg-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
 	const connectNoteAction = document.getElementById("connect-note-action");
 	const deleteConnectionAction = document.getElementById("delete-connection-action");
@@ -121,6 +124,7 @@ export function initNotesCanvas(): void {
 		!(createNoteAction instanceof HTMLButtonElement) ||
 		!(createGroupAction instanceof HTMLButtonElement) ||
 		!(renameGroupAction instanceof HTMLButtonElement) ||
+		!(replaceGroupBgAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
 		!(connectNoteAction instanceof HTMLButtonElement) ||
 		!(deleteConnectionAction instanceof HTMLButtonElement) ||
@@ -145,6 +149,7 @@ export function initNotesCanvas(): void {
 		createNoteAction,
 		createGroupAction,
 		renameGroupAction,
+		replaceGroupBgAction,
 		deleteGroupAction,
 		connectNoteAction,
 		deleteConnectionAction,
@@ -178,6 +183,7 @@ export function initNotesCanvas(): void {
 		dom.createNoteAction.hidden = false;
 		dom.createGroupAction.hidden = false;
 		dom.renameGroupAction.hidden = true;
+		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
@@ -189,6 +195,7 @@ export function initNotesCanvas(): void {
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
 		dom.renameGroupAction.hidden = false;
+		dom.replaceGroupBgAction.hidden = false;
 		dom.deleteGroupAction.hidden = false;
 		dom.connectNoteAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
@@ -200,6 +207,7 @@ export function initNotesCanvas(): void {
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
 		dom.renameGroupAction.hidden = true;
+		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = false;
 		dom.deleteConnectionAction.hidden = true;
@@ -211,6 +219,7 @@ export function initNotesCanvas(): void {
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
 		dom.renameGroupAction.hidden = true;
+		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
 		dom.deleteConnectionAction.hidden = false;
@@ -624,6 +633,9 @@ export function initNotesCanvas(): void {
 		} else {
 			const groupItem = document.createElement("div");
 			groupItem.className = "group-item item";
+			if (item.backgroundImageUrl) {
+				groupItem.style.setProperty("--group-item-bg-image", `url("${item.backgroundImageUrl}")`);
+			}
 			const input = document.createElement("input");
 			input.type = "text";
 			input.value = item.title;
@@ -886,6 +898,52 @@ export function initNotesCanvas(): void {
 		}
 		startGroupEditingById(contextMenuState.groupId);
 		closeContextMenu();
+	});
+
+	dom.replaceGroupBgAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "group") {
+			return;
+		}
+
+		const group = findGroupInCurrentBoard(contextMenuState.groupId);
+		if (!group) {
+			closeContextMenu();
+			return;
+		}
+
+		const picker = document.createElement("input");
+		picker.type = "file";
+		picker.accept = "image/*";
+		picker.style.display = "none";
+		document.body.appendChild(picker);
+
+		picker.addEventListener("change", () => {
+			const file = picker.files?.[0];
+			if (!file || !file.type.startsWith("image/")) {
+				picker.remove();
+				return;
+			}
+
+			const reader = new FileReader();
+			reader.onload = () => {
+				if (typeof reader.result === "string") {
+					group.backgroundImageUrl = reader.result;
+					renderBoard();
+				}
+				picker.remove();
+			};
+			reader.onerror = () => {
+				picker.remove();
+			};
+			reader.readAsDataURL(file);
+		});
+
+		picker.addEventListener("cancel", () => {
+			picker.remove();
+		});
+
+		closeContextMenu();
+		picker.click();
 	});
 
 	dom.connectNoteAction.addEventListener("click", (event) => {

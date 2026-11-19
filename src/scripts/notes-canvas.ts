@@ -54,6 +54,8 @@ interface DomRefs {
 	deleteImageAction: HTMLButtonElement;
 	deleteConnectionAction: HTMLButtonElement;
 	deleteNoteAction: HTMLButtonElement;
+	duplicateSelectionAction: HTMLButtonElement;
+	deleteSelectionAction: HTMLButtonElement;
 	boardBreadcrumbs: HTMLElement;
 	connectionsPermanent: SVGGElement;
 	connectionPreview: SVGLineElement;
@@ -85,6 +87,8 @@ export function initNotesCanvas(): void {
 	const deleteImageAction = document.getElementById("delete-image-action");
 	const deleteConnectionAction = document.getElementById("delete-connection-action");
 	const deleteNoteAction = document.getElementById("delete-note-action");
+	const duplicateSelectionAction = document.getElementById("duplicate-selection-action");
+	const deleteSelectionAction = document.getElementById("delete-selection-action");
 	const boardBreadcrumbs = document.getElementById("board-breadcrumbs");
 	const connectionsPermanent = document.getElementById("connections-permanent");
 	const connectionPreview = document.getElementById("connection-preview");
@@ -107,6 +111,8 @@ export function initNotesCanvas(): void {
 		!(deleteImageAction instanceof HTMLButtonElement) ||
 		!(deleteConnectionAction instanceof HTMLButtonElement) ||
 		!(deleteNoteAction instanceof HTMLButtonElement) ||
+		!(duplicateSelectionAction instanceof HTMLButtonElement) ||
+		!(deleteSelectionAction instanceof HTMLButtonElement) ||
 		!(boardBreadcrumbs instanceof HTMLElement) ||
 		!(connectionsPermanent instanceof SVGGElement) ||
 		!(connectionPreview instanceof SVGLineElement) ||
@@ -137,6 +143,8 @@ export function initNotesCanvas(): void {
 		deleteImageAction,
 		deleteConnectionAction,
 		deleteNoteAction,
+		duplicateSelectionAction,
+		deleteSelectionAction,
 		boardBreadcrumbs,
 		connectionsPermanent,
 		connectionPreview,
@@ -180,6 +188,55 @@ export function initNotesCanvas(): void {
 		contextMenuState = null;
 	}
 
+	function setSelectionActionsVisibility(visible: boolean): void {
+		dom.duplicateSelectionAction.hidden = !visible;
+		dom.deleteSelectionAction.hidden = !visible;
+	}
+
+	function getContextMenuItemId(): string | null {
+		if (!contextMenuState) {
+			return null;
+		}
+		if (contextMenuState.type === "note") {
+			return contextMenuState.noteId;
+		}
+		if (contextMenuState.type === "group") {
+			return contextMenuState.groupId;
+		}
+		if (contextMenuState.type === "organizer") {
+			return contextMenuState.organizerId;
+		}
+		if (contextMenuState.type === "image") {
+			return contextMenuState.imageId;
+		}
+		return null;
+	}
+
+	function getContextActionTargetIds(): Set<string> {
+		const contextItemId = getContextMenuItemId();
+		if (!contextItemId) {
+			return new Set<string>();
+		}
+		if (selectedItemIds.size > 1 && selectedItemIds.has(contextItemId)) {
+			return new Set(selectedItemIds);
+		}
+		return new Set([contextItemId]);
+	}
+
+	function refreshSelectionActionLabels(): void {
+		const contextItemId = getContextMenuItemId();
+		const usingSelection =
+			Boolean(contextItemId) &&
+			selectedItemIds.size > 1 &&
+			selectedItemIds.has(contextItemId);
+		dom.duplicateSelectionAction.textContent = usingSelection
+			? "Duplicate selection"
+			: "Duplicate";
+		dom.deleteSelectionAction.textContent = usingSelection
+			? "Delete selection"
+			: "Delete";
+	}
+
 	function showCanvasMenu(point: Point): void {
 		contextMenuState = { type: "canvas", point };
 		dom.createNoteAction.hidden = false;
@@ -195,9 +252,10 @@ export function initNotesCanvas(): void {
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
+		setSelectionActionsVisibility(false);
 	}
 
-	function showGroupMenu(groupId: string): void {
+	function showGroupMenu(groupId: string, showSelectionActions = false): void {
 		contextMenuState = { type: "group", groupId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
@@ -212,9 +270,11 @@ export function initNotesCanvas(): void {
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
+		setSelectionActionsVisibility(showSelectionActions);
+		refreshSelectionActionLabels();
 	}
 
-	function showOrganizerMenu(organizerId: string): void {
+	function showOrganizerMenu(organizerId: string, showSelectionActions = false): void {
 		contextMenuState = { type: "organizer", organizerId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
@@ -229,9 +289,11 @@ export function initNotesCanvas(): void {
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
+		setSelectionActionsVisibility(showSelectionActions);
+		refreshSelectionActionLabels();
 	}
 
-	function showNoteMenu(noteId: string): void {
+	function showNoteMenu(noteId: string, showSelectionActions = false): void {
 		contextMenuState = { type: "note", noteId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
@@ -246,9 +308,11 @@ export function initNotesCanvas(): void {
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = false;
+		setSelectionActionsVisibility(showSelectionActions);
+		refreshSelectionActionLabels();
 	}
 
-	function showImageMenu(imageId: string): void {
+	function showImageMenu(imageId: string, showSelectionActions = false): void {
 		contextMenuState = { type: "image", imageId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
@@ -263,6 +327,8 @@ export function initNotesCanvas(): void {
 		dom.deleteImageAction.hidden = false;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
+		setSelectionActionsVisibility(showSelectionActions);
+		refreshSelectionActionLabels();
 	}
 
 	function showConnectionMenu(connectionId: string): void {
@@ -280,6 +346,7 @@ export function initNotesCanvas(): void {
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = false;
 		dom.deleteNoteAction.hidden = true;
+		setSelectionActionsVisibility(false);
 	}
 
 	function refreshBoardHeader(): void {
@@ -604,7 +671,7 @@ export function initNotesCanvas(): void {
 	function getSnapTargetCenters(item: CanvasItem, excludedItemIds: Set<string>): Point[] {
 		const centers: Point[] = [];
 		const draggingOutsideOrganizer =
-			isContainableItem(item) && !item.parentOrganizerId;
+			item.type === "organizer" || (isContainableItem(item) && !item.parentOrganizerId);
 		for (const [otherItemId, element] of itemElements.entries()) {
 			if (otherItemId === item.id || excludedItemIds.has(otherItemId)) {
 				continue;
@@ -900,6 +967,197 @@ export function initNotesCanvas(): void {
 			}
 		}
 		selectedItemIds.delete(organizerId);
+		return true;
+	}
+
+	function removeItemById(item: CanvasItem, id: string): boolean {
+		return item.type === "note"
+			? removeNoteById(id)
+			: item.type === "group"
+				? removeGroupById(id)
+				: item.type === "image"
+					? removeImageById(id)
+					: removeOrganizerById(id);
+	}
+
+	function deleteSelectedItems(): boolean {
+		if (selectedItemIds.size === 0) {
+			return false;
+		}
+
+		return deleteItemsByIds(new Set(selectedItemIds));
+	}
+
+	function deleteItemsByIds(itemIds: Set<string>): boolean {
+		if (itemIds.size === 0) {
+			return false;
+		}
+
+		let removedAny = false;
+		const selectedIds = Array.from(itemIds);
+		for (const id of selectedIds) {
+			const item = currentBoard().items.find((candidate) => candidate.id === id);
+			if (!item) {
+				continue;
+			}
+			const removed = removeItemById(item, id);
+			removedAny = removedAny || removed;
+		}
+		return removedAny;
+	}
+
+	function expandSelectionForDuplication(initialSelectedIds: Set<string>): Set<string> {
+		const expanded = new Set(initialSelectedIds);
+		for (const id of Array.from(initialSelectedIds)) {
+			const item = currentBoard().items.find((candidate) => candidate.id === id);
+			if (!item || item.type !== "organizer") {
+				continue;
+			}
+			for (const candidate of currentBoard().items) {
+				if (isContainableItem(candidate) && candidate.parentOrganizerId === item.id) {
+					expanded.add(candidate.id);
+				}
+			}
+		}
+		return expanded;
+	}
+
+	function cloneBoardDeep(source: Board): Board {
+		const itemIdMap = new Map<string, string>();
+		const clonedItems: CanvasItem[] = source.items.map((item) => {
+			const clone = cloneItemForDuplicate(item, 0, 0);
+			itemIdMap.set(item.id, clone.id);
+			return clone;
+		});
+		for (const clone of clonedItems) {
+			if (!isContainableItem(clone) || !clone.parentOrganizerId) {
+				continue;
+			}
+			const mappedParentId = itemIdMap.get(clone.parentOrganizerId);
+			if (mappedParentId) {
+				clone.parentOrganizerId = mappedParentId;
+			}
+		}
+		const clonedConnections: Connection[] = [];
+		for (const connection of source.connections) {
+			const fromItemId = itemIdMap.get(connection.fromItemId);
+			const toItemId = itemIdMap.get(connection.toItemId);
+			if (!fromItemId || !toItemId) {
+				continue;
+			}
+			clonedConnections.push({ id: createId(), fromItemId, toItemId });
+		}
+
+		return {
+			id: createId(),
+			title: source.title,
+			items: clonedItems,
+			connections: clonedConnections,
+		};
+	}
+
+	function cloneItemForDuplicate(item: CanvasItem, offsetX: number, offsetY: number): CanvasItem {
+		if (item.type === "note") {
+			return {
+				...item,
+				id: createId(),
+				x: item.x + offsetX,
+				y: item.y + offsetY,
+			};
+		}
+		if (item.type === "group") {
+			return {
+				...item,
+				id: createId(),
+				x: item.x + offsetX,
+				y: item.y + offsetY,
+				board: cloneBoardDeep(item.board),
+			};
+		}
+		if (item.type === "image") {
+			return {
+				...item,
+				id: createId(),
+				x: item.x + offsetX,
+				y: item.y + offsetY,
+			};
+		}
+		return {
+			...item,
+			id: createId(),
+			x: item.x + offsetX,
+			y: item.y + offsetY,
+		};
+	}
+
+	function duplicateItemsByIds(itemIds: Set<string>): boolean {
+		if (itemIds.size === 0) {
+			return false;
+		}
+
+		const idsToDuplicate = expandSelectionForDuplication(itemIds);
+		if (idsToDuplicate.size === 0) {
+			return false;
+		}
+
+		const offset = idsToDuplicate.size > 1 ? 28 : 24;
+		const idMap = new Map<string, string>();
+		const clones: CanvasItem[] = [];
+		for (const item of currentBoard().items) {
+			if (!idsToDuplicate.has(item.id)) {
+				continue;
+			}
+			const clone = cloneItemForDuplicate(item, offset, offset);
+			idMap.set(item.id, clone.id);
+			clones.push(clone);
+		}
+		if (clones.length === 0) {
+			return false;
+		}
+
+		for (const clone of clones) {
+			if (!isContainableItem(clone) || !clone.parentOrganizerId) {
+				continue;
+			}
+			const remappedParentId = idMap.get(clone.parentOrganizerId);
+			if (remappedParentId) {
+				clone.parentOrganizerId = remappedParentId;
+			}
+		}
+
+		currentBoard().items.push(...clones);
+		const clonedConnections: Connection[] = [];
+		for (const connection of currentBoard().connections) {
+			const fromItemId = idMap.get(connection.fromItemId);
+			const toItemId = idMap.get(connection.toItemId);
+			if (!fromItemId || !toItemId) {
+				continue;
+			}
+			clonedConnections.push({
+				id: createId(),
+				fromItemId,
+				toItemId,
+			});
+		}
+		currentBoard().connections.push(...clonedConnections);
+
+		const affectedOrganizerIds = new Set<string>();
+		for (const clone of clones) {
+			if (clone.type === "organizer") {
+				affectedOrganizerIds.add(clone.id);
+			}
+			if (isContainableItem(clone) && clone.parentOrganizerId) {
+				affectedOrganizerIds.add(clone.parentOrganizerId);
+			}
+		}
+		for (const organizerId of affectedOrganizerIds) {
+			layoutOrganizerItems(organizerId);
+		}
+
+		selectedItemIds.clear();
+		for (const clone of clones) {
+			selectedItemIds.add(clone.id);
+		}
 		return true;
 	}
 
@@ -1791,7 +2049,7 @@ export function initNotesCanvas(): void {
 				closeContextMenu();
 				return;
 			}
-			showNoteMenu(noteId);
+			showNoteMenu(noteId, true);
 		} else if (groupTarget instanceof HTMLElement) {
 			if (groupTarget.classList.contains("is-editing")) {
 				closeContextMenu();
@@ -1803,7 +2061,7 @@ export function initNotesCanvas(): void {
 				closeContextMenu();
 				return;
 			}
-			showGroupMenu(groupId);
+			showGroupMenu(groupId, true);
 		} else if (organizerTarget instanceof HTMLElement) {
 			if (organizerTarget.classList.contains("is-editing")) {
 				closeContextMenu();
@@ -1815,14 +2073,14 @@ export function initNotesCanvas(): void {
 				closeContextMenu();
 				return;
 			}
-			showOrganizerMenu(organizerId);
+			showOrganizerMenu(organizerId, true);
 		} else if (imageTarget instanceof HTMLElement) {
 			const imageId = imageTarget.dataset.itemId;
 			if (!imageId || !findImageInCurrentBoard(imageId)) {
 				closeContextMenu();
 				return;
 			}
-			showImageMenu(imageId);
+			showImageMenu(imageId, true);
 		} else if (canOpenCanvasMenu(event.target)) {
 			showCanvasMenu(relative);
 		} else {
@@ -2179,6 +2437,26 @@ export function initNotesCanvas(): void {
 		closeContextMenu();
 	});
 
+	dom.duplicateSelectionAction.addEventListener("click", () => {
+		const targetIds = getContextActionTargetIds();
+		if (!duplicateItemsByIds(targetIds)) {
+			closeContextMenu();
+			return;
+		}
+		renderBoard();
+		closeContextMenu();
+	});
+
+	dom.deleteSelectionAction.addEventListener("click", () => {
+		const targetIds = getContextActionTargetIds();
+		if (!deleteItemsByIds(targetIds)) {
+			closeContextMenu();
+			return;
+		}
+		renderBoard();
+		closeContextMenu();
+	});
+
 	dom.boldAction.addEventListener("mousedown", (event) => {
 		event.preventDefault();
 	});
@@ -2290,25 +2568,7 @@ export function initNotesCanvas(): void {
 			}
 
 			event.preventDefault();
-			let removedAny = false;
-			const selectedIds = Array.from(selectedItemIds);
-			for (const id of selectedIds) {
-				const item = currentBoard().items.find((candidate) => candidate.id === id);
-				if (!item) {
-					continue;
-				}
-				const removed =
-					item.type === "note"
-						? removeNoteById(id)
-						: item.type === "group"
-							? removeGroupById(id)
-							: item.type === "image"
-								? removeImageById(id)
-								: removeOrganizerById(id);
-				removedAny = removedAny || removed;
-			}
-			if (removedAny) {
-				selectedItemIds.clear();
+			if (deleteSelectedItems()) {
 				renderBoard();
 			}
 		}

@@ -1,0 +1,20 @@
+---
+import "../styles/notes-canvas.css";
+---
+
+<main class="canvas" id="canvas" aria-label="Notes canvas">
+	<div class="toolbar">
+		<button class="back-button" id="back-button" type="button" hidden>Back</button>
+		<p class="board-label" id="board-label">Home</p>
+	</div>
+	<div class="context-menu" id="context-menu" hidden>
+		<button type="button" id="create-note-action">Create note</button>
+		<button type="button" id="create-group-action">Create note group</button>
+	</div>
+</main>
+
+<script type="module">
+	import { initNotesCanvas } from "../scripts/notes-canvas";
+
+	initNotesCanvas();
+</script>

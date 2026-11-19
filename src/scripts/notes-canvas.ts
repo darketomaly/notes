@@ -41,12 +41,14 @@ interface DomRefs {
 	createNoteAction: HTMLButtonElement;
 	createGroupAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
+	deleteNoteAction: HTMLButtonElement;
 	boardBreadcrumbs: HTMLElement;
 }
 
 type ContextMenuState =
 	| { type: "canvas"; point: Point }
-	| { type: "group"; groupId: string };
+	| { type: "group"; groupId: string }
+	| { type: "note"; noteId: string };
 
 function createId(): string {
 	if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -87,6 +89,7 @@ export function initNotesCanvas(): void {
 	const createNoteAction = document.getElementById("create-note-action");
 	const createGroupAction = document.getElementById("create-group-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
+	const deleteNoteAction = document.getElementById("delete-note-action");
 	const boardBreadcrumbs = document.getElementById("board-breadcrumbs");
 
 	if (
@@ -95,6 +98,7 @@ export function initNotesCanvas(): void {
 		!(createNoteAction instanceof HTMLButtonElement) ||
 		!(createGroupAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
+		!(deleteNoteAction instanceof HTMLButtonElement) ||
 		!(boardBreadcrumbs instanceof HTMLElement)
 	) {
 		return;
@@ -111,6 +115,7 @@ export function initNotesCanvas(): void {
 		createNoteAction,
 		createGroupAction,
 		deleteGroupAction,
+		deleteNoteAction,
 		boardBreadcrumbs,
 	};
 
@@ -132,6 +137,7 @@ export function initNotesCanvas(): void {
 		dom.createNoteAction.hidden = false;
 		dom.createGroupAction.hidden = false;
 		dom.deleteGroupAction.hidden = true;
+		dom.deleteNoteAction.hidden = true;
 	}
 
 	function showGroupMenu(groupId: string): void {
@@ -139,6 +145,15 @@ export function initNotesCanvas(): void {
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
 		dom.deleteGroupAction.hidden = false;
+		dom.deleteNoteAction.hidden = true;
+	}
+
+	function showNoteMenu(noteId: string): void {
+		contextMenuState = { type: "note", noteId };
+		dom.createNoteAction.hidden = true;
+		dom.createGroupAction.hidden = true;
+		dom.deleteGroupAction.hidden = true;
+		dom.deleteNoteAction.hidden = false;
 	}
 
 	function refreshBoardHeader(): void {
@@ -185,6 +200,15 @@ export function initNotesCanvas(): void {
 		return items.find(
 			(item): item is GroupItem => item.type === "group" && item.id === groupId,
 		);
+	}
+
+	function findNoteInCurrentBoard(noteId: string): NoteItem | undefined {
+		const items = currentBoard().items;
+		return items.find((item): item is NoteItem => item.type === "note" && item.id === noteId);
+	}
+
+	function getMenuHeight(): number {
+		return dom.createNoteAction.hidden ? 52 : CONTEXT_MENU_HEIGHT;
 	}
 
 	function makeDraggable(element: HTMLElement, item: CanvasItem): void {
@@ -337,15 +361,23 @@ export function initNotesCanvas(): void {
 	dom.canvas.addEventListener("contextmenu", (event) => {
 		event.preventDefault();
 		const target = event.target instanceof HTMLElement ? event.target : null;
-
-		if (target && target.closest(".note")) {
-			closeContextMenu();
-			return;
-		}
-
 		const relative = getRelativePoint(dom.canvas, event.clientX, event.clientY);
+		const noteTarget = target?.closest(".note");
 		const groupTarget = target?.closest(".group-item");
 
+		if (noteTarget instanceof HTMLElement) {
+			if (noteTarget.classList.contains("is-editing")) {
+				closeContextMenu();
+				return;
+			}
+
+			const noteId = noteTarget.dataset.itemId;
+			if (!noteId || !findNoteInCurrentBoard(noteId)) {
+				closeContextMenu();
+				return;
+			}
+			showNoteMenu(noteId);
+		} else
 		if (groupTarget instanceof HTMLElement) {
 			const groupId = groupTarget.dataset.itemId;
 			if (!groupId || !findGroupInCurrentBoard(groupId)) {
@@ -365,7 +397,7 @@ export function initNotesCanvas(): void {
 			relative.x,
 			relative.y,
 			CONTEXT_MENU_WIDTH,
-			dom.deleteGroupAction.hidden ? CONTEXT_MENU_HEIGHT : 52,
+			getMenuHeight(),
 		);
 		dom.contextMenu.style.left = `${clampedMenu.x}px`;
 		dom.contextMenu.style.top = `${clampedMenu.y}px`;
@@ -395,6 +427,25 @@ export function initNotesCanvas(): void {
 
 		const index = currentBoard().items.findIndex(
 			(item) => item.type === "group" && item.id === contextMenuState.groupId,
+		);
+
+		if (index === -1) {
+			closeContextMenu();
+			return;
+		}
+
+		currentBoard().items.splice(index, 1);
+		renderBoard();
+		closeContextMenu();
+	});
+
+	dom.deleteNoteAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "note") {
+			return;
+		}
+
+		const index = currentBoard().items.findIndex(
+			(item) => item.type === "note" && item.id === contextMenuState.noteId,
 		);
 
 		if (index === -1) {

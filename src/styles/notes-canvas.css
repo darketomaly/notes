@@ -7,6 +7,7 @@
 	--glow-rgb: 84, 166, 255;
 	--glow-soft: rgba(var(--glow-rgb), 0.2);
 	--glow-strong: rgba(var(--glow-rgb), 0.34);
+	--group-card-bg-image: url("/group-card-bg.svg");
 }
 
 * {
@@ -209,6 +210,7 @@ body {
 	min-width: 150px;
 	border: 1px solid #5a5a5a;
 	border-radius: 0.6rem;
+	overflow: hidden;
 	padding: 0.55rem 0.7rem;
 	font: inherit;
 	background: #2c2c2c;
@@ -221,6 +223,39 @@ body {
 	transition:
 		border-color 140ms ease,
 		box-shadow 140ms ease;
+}
+
+.group-item::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background-image: var(--group-card-bg-image);
+	background-size: cover;
+	background-position: center;
+	opacity: 0.32;
+	-webkit-mask-image: linear-gradient(
+		to right,
+		rgba(0, 0, 0, 1) 0%,
+		rgba(0, 0, 0, 0.72) 45%,
+		rgba(0, 0, 0, 0) 100%
+	);
+	mask-image: linear-gradient(
+		to right,
+		rgba(0, 0, 0, 1) 0%,
+		rgba(0, 0, 0, 0.72) 45%,
+		rgba(0, 0, 0, 0) 100%
+	);
+	pointer-events: none;
+}
+
+.group-item::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background:
+		radial-gradient(140% 100% at 0% 50%, rgba(0, 0, 0, 0.24) 0%, rgba(0, 0, 0, 0) 62%),
+		linear-gradient(180deg, rgba(0, 0, 0, 0.24), rgba(0, 0, 0, 0.12));
+	pointer-events: none;
 }
 
 @keyframes item-punch-in {
@@ -247,6 +282,8 @@ body {
 }
 
 .group-item input {
+	position: relative;
+	z-index: 1;
 	width: 100%;
 	border: 0;
 	outline: 0;

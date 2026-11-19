@@ -254,6 +254,7 @@ export function initNotesCanvas(): void {
 	let marqueeStartPoint: Point | null = null;
 	let marqueeCurrentPoint: Point | null = null;
 	let suppressNextCanvasClick = false;
+	let activeDropTargetOrganizerId: string | null = null;
 
 	function currentBoard(): Board {
 		return boardStack[boardStack.length - 1];
@@ -503,17 +504,24 @@ export function initNotesCanvas(): void {
 		itemElement: HTMLElement,
 	): OrganizerItem | null {
 		const center = getElementCenter(itemElement);
+		return resolveOrganizerForPoint(center, item.id);
+	}
+
+	function resolveOrganizerForPoint(
+		point: Point,
+		ignoreItemId?: string,
+	): OrganizerItem | null {
 		const organizers = currentBoard().items.filter(
 			(candidate): candidate is OrganizerItem => candidate.type === "organizer",
 		);
 
 		for (let index = organizers.length - 1; index >= 0; index -= 1) {
 			const organizer = organizers[index];
-			if (organizer.id === item.id) {
+			if (ignoreItemId && organizer.id === ignoreItemId) {
 				continue;
 			}
 			const bounds = getOrganizerBodyBounds(organizer);
-			if (isPointInsideBounds(center, bounds)) {
+			if (isPointInsideBounds(point, bounds)) {
 				return organizer;
 			}
 		}
@@ -946,6 +954,23 @@ export function initNotesCanvas(): void {
 		}
 	}
 
+	function setActiveDropTargetOrganizer(organizerId: string | null): void {
+		if (activeDropTargetOrganizerId === organizerId) {
+			return;
+		}
+
+		if (activeDropTargetOrganizerId) {
+			const previous = itemElements.get(activeDropTargetOrganizerId);
+			previous?.classList.remove("is-drop-target");
+		}
+
+		activeDropTargetOrganizerId = organizerId;
+		if (activeDropTargetOrganizerId) {
+			const next = itemElements.get(activeDropTargetOrganizerId);
+			next?.classList.add("is-drop-target");
+		}
+	}
+
 	function removeNoteById(noteId: string): boolean {
 		const index = currentBoard().items.findIndex(
 			(item) => item.type === "note" && item.id === noteId,
@@ -1166,6 +1191,7 @@ export function initNotesCanvas(): void {
 				start() {
 					closeContextMenu();
 					hideSnapGuides();
+					setActiveDropTargetOrganizer(null);
 					draggedIds =
 						selectedItemIds.size > 1 && selectedItemIds.has(item.id)
 							? Array.from(selectedItemIds)
@@ -1225,11 +1251,30 @@ export function initNotesCanvas(): void {
 
 					if (draggedItems.length === 0) {
 						hideSnapGuides();
+						setActiveDropTargetOrganizer(null);
 						return;
 					}
 
 					appliedDx = Math.max(minDx, Math.min(maxDx, appliedDx));
 					appliedDy = Math.max(minDy, Math.min(maxDy, appliedDy));
+					const primaryDragged = draggedItems.length === 1 ? draggedItems[0] : null;
+					const hoveredDropOrganizer =
+						primaryDragged && isContainableItem(primaryDragged.data)
+							? resolveOrganizerForPoint(
+									{
+										x:
+											primaryDragged.element.offsetLeft +
+											primaryDragged.element.offsetWidth / 2 +
+											appliedDx,
+										y:
+											primaryDragged.element.offsetTop +
+											primaryDragged.element.offsetHeight / 2 +
+											appliedDy,
+									},
+									primaryDragged.data.id,
+								)
+							: null;
+					setActiveDropTargetOrganizer(hoveredDropOrganizer?.id ?? null);
 					const singleDraggedItem = draggedItems.length === 1 ? draggedItems[0].data : null;
 					const isOrganizerManagedItem =
 						singleDraggedItem &&
@@ -1238,7 +1283,8 @@ export function initNotesCanvas(): void {
 					if (
 						draggedItems.length === 1 &&
 						draggedItems[0].data.type !== "organizer" &&
-						!isOrganizerManagedItem
+						!isOrganizerManagedItem &&
+						!hoveredDropOrganizer
 					) {
 						const snapped = getSnappedDragDelta(
 							draggedItems[0].data,
@@ -1321,6 +1367,7 @@ export function initNotesCanvas(): void {
 					renderConnections();
 					refreshConnectionPreview();
 					hideSnapGuides();
+					setActiveDropTargetOrganizer(null);
 				},
 			},
 		});

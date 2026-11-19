@@ -297,7 +297,7 @@ export function initNotesCanvas(): void {
 		const canvasRect = dom.canvas.getBoundingClientRect();
 		const editorRect = editor.getBoundingClientRect();
 		const left = editorRect.left - canvasRect.left + editorRect.width / 2;
-		const top = editorRect.top - canvasRect.top - 8;
+		const top = editorRect.top - canvasRect.top - 18;
 		dom.textToolbar.style.left = `${left}px`;
 		dom.textToolbar.style.top = `${top}px`;
 	}
@@ -703,7 +703,13 @@ export function initNotesCanvas(): void {
 	}
 
 	function createNoteAt(positionX: number, positionY: number): void {
-		const clamped = clampToCanvas(dom.canvas, positionX, positionY, NOTE_WIDTH, NOTE_HEIGHT);
+		const clamped = clampToCanvas(
+			dom.canvas,
+			positionX - NOTE_WIDTH / 2,
+			positionY - NOTE_HEIGHT / 2,
+			NOTE_WIDTH,
+			NOTE_HEIGHT,
+		);
 		const note: NoteItem = {
 			id: createId(),
 			type: "note",

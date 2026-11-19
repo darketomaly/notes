@@ -11,7 +11,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 type Point = { x: number; y: number };
 
-type CanvasItem = NoteItem | GroupItem;
+type CanvasItem = NoteItem | GroupItem | ImageItem;
 
 interface Board {
 	id: string;
@@ -39,6 +39,13 @@ interface GroupItem extends BaseItem {
 	backgroundImageUrl?: string;
 }
 
+interface ImageItem extends BaseItem {
+	type: "image";
+	src: string;
+	width: number;
+	height: number;
+}
+
 interface Connection {
 	id: string;
 	fromNoteId: string;
@@ -50,6 +57,7 @@ interface DomRefs {
 	contextMenu: HTMLElement;
 	createNoteAction: HTMLButtonElement;
 	createGroupAction: HTMLButtonElement;
+	createImageAction: HTMLButtonElement;
 	renameGroupAction: HTMLButtonElement;
 	replaceGroupBgAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
@@ -107,6 +115,7 @@ export function initNotesCanvas(): void {
 	const contextMenu = document.getElementById("context-menu");
 	const createNoteAction = document.getElementById("create-note-action");
 	const createGroupAction = document.getElementById("create-group-action");
+	const createImageAction = document.getElementById("create-image-action");
 	const renameGroupAction = document.getElementById("rename-group-action");
 	const replaceGroupBgAction = document.getElementById("replace-group-bg-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
@@ -124,6 +133,7 @@ export function initNotesCanvas(): void {
 		!(contextMenu instanceof HTMLElement) ||
 		!(createNoteAction instanceof HTMLButtonElement) ||
 		!(createGroupAction instanceof HTMLButtonElement) ||
+		!(createImageAction instanceof HTMLButtonElement) ||
 		!(renameGroupAction instanceof HTMLButtonElement) ||
 		!(replaceGroupBgAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
@@ -149,6 +159,7 @@ export function initNotesCanvas(): void {
 		contextMenu,
 		createNoteAction,
 		createGroupAction,
+		createImageAction,
 		renameGroupAction,
 		replaceGroupBgAction,
 		deleteGroupAction,
@@ -193,6 +204,7 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "canvas", point };
 		dom.createNoteAction.hidden = false;
 		dom.createGroupAction.hidden = false;
+		dom.createImageAction.hidden = false;
 		dom.renameGroupAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
@@ -205,6 +217,7 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "group", groupId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.createImageAction.hidden = true;
 		dom.renameGroupAction.hidden = false;
 		dom.replaceGroupBgAction.hidden = false;
 		dom.deleteGroupAction.hidden = false;
@@ -217,6 +230,7 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "note", noteId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.createImageAction.hidden = true;
 		dom.renameGroupAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
@@ -229,6 +243,7 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "connection", connectionId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.createImageAction.hidden = true;
 		dom.renameGroupAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
@@ -582,6 +597,19 @@ export function initNotesCanvas(): void {
 		return true;
 	}
 
+	function removeImageById(imageId: string): boolean {
+		const index = currentBoard().items.findIndex(
+			(item) => item.type === "image" && item.id === imageId,
+		);
+		if (index === -1) {
+			return false;
+		}
+
+		currentBoard().items.splice(index, 1);
+		selectedItemIds.delete(imageId);
+		return true;
+	}
+
 	function renderConnections(): void {
 		const board = currentBoard();
 		dom.connectionsPermanent.replaceChildren();
@@ -692,7 +720,7 @@ export function initNotesCanvas(): void {
 		let draggedIds: string[] = [item.id];
 
 		interact(element).draggable({
-			ignoreFrom: "input, textarea, [contenteditable='true']",
+			ignoreFrom: "input, textarea, [contenteditable='true'], .image-resize-handle",
 			listeners: {
 				start() {
 					closeContextMenu();
@@ -750,6 +778,33 @@ export function initNotesCanvas(): void {
 					}
 					renderConnections();
 					refreshConnectionPreview();
+				},
+			},
+		});
+	}
+
+	function makeResizableImage(element: HTMLElement, item: ImageItem): void {
+		interact(element).resizable({
+			edges: { right: ".image-resize-handle", bottom: ".image-resize-handle" },
+			listeners: {
+				start() {
+					closeContextMenu();
+				},
+				move(event) {
+					const canvasBounds = dom.canvas.getBoundingClientRect();
+					const width = Math.max(100, event.rect.width);
+					const height = Math.max(80, event.rect.height);
+					const clamped = clampToCanvas(dom.canvas, item.x, item.y, width, height);
+					const maxWidth = Math.max(100, canvasBounds.width - clamped.x - EDGE_PADDING);
+					const maxHeight = Math.max(80, canvasBounds.height - clamped.y - EDGE_PADDING);
+					item.width = Math.min(maxWidth, Math.max(100, width - (clamped.x - item.x)));
+					item.height = Math.min(maxHeight, Math.max(80, height - (clamped.y - item.y)));
+					item.x = clamped.x;
+					item.y = clamped.y;
+					element.style.left = `${item.x}px`;
+					element.style.top = `${item.y}px`;
+					element.style.width = `${item.width}px`;
+					element.style.height = `${item.height}px`;
 				},
 			},
 		});
@@ -841,7 +896,7 @@ export function initNotesCanvas(): void {
 					syncEditorTypingBold(item.typingBold);
 				});
 			}
-		} else {
+		} else if (item.type === "group") {
 			const groupItem = document.createElement("div");
 			groupItem.className = "group-item item";
 			if (item.backgroundImageUrl) {
@@ -891,6 +946,24 @@ export function initNotesCanvas(): void {
 					input.select();
 				});
 			}
+		} else {
+			const imageItem = document.createElement("div");
+			imageItem.className = "image-item item";
+			imageItem.style.width = `${item.width}px`;
+			imageItem.style.height = `${item.height}px`;
+
+			const image = document.createElement("img");
+			image.src = item.src;
+			image.alt = "";
+			image.draggable = false;
+
+			const resizeHandle = document.createElement("div");
+			resizeHandle.className = "image-resize-handle";
+			resizeHandle.setAttribute("aria-hidden", "true");
+
+			imageItem.appendChild(image);
+			imageItem.appendChild(resizeHandle);
+			element = imageItem;
 		}
 
 		element.dataset.itemId = item.id;
@@ -909,6 +982,9 @@ export function initNotesCanvas(): void {
 			noteElements.set(item.id, element);
 		}
 		makeDraggable(element, item);
+		if (item.type === "image") {
+			makeResizableImage(element, item);
+		}
 	}
 
 	function renderBoard(): void {
@@ -962,6 +1038,89 @@ export function initNotesCanvas(): void {
 		};
 		current.items.push(group);
 		renderItem(group, true);
+	}
+
+	function pickImageFile(): Promise<File | null> {
+		return new Promise((resolve) => {
+			const picker = document.createElement("input");
+			picker.type = "file";
+			picker.accept = "image/*";
+			picker.style.display = "none";
+			document.body.appendChild(picker);
+
+			const cleanup = () => {
+				picker.remove();
+			};
+
+			picker.addEventListener("change", () => {
+				const file = picker.files?.[0] ?? null;
+				cleanup();
+				resolve(file);
+			});
+
+			picker.addEventListener("cancel", () => {
+				cleanup();
+				resolve(null);
+			});
+
+			picker.click();
+		});
+	}
+
+	async function createImageAt(positionX: number, positionY: number): Promise<void> {
+		const file = await pickImageFile();
+		if (!file || !file.type.startsWith("image/")) {
+			return;
+		}
+
+		const dataUrl = await new Promise<string | null>((resolve) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				resolve(typeof reader.result === "string" ? reader.result : null);
+			};
+			reader.onerror = () => resolve(null);
+			reader.readAsDataURL(file);
+		});
+		if (!dataUrl) {
+			return;
+		}
+
+		const initialSize = await new Promise<{ width: number; height: number }>((resolve) => {
+			const image = new Image();
+			image.onload = () => {
+				const maxWidth = 360;
+				const maxHeight = 260;
+				const widthRatio = maxWidth / image.naturalWidth;
+				const heightRatio = maxHeight / image.naturalHeight;
+				const ratio = Math.min(1, widthRatio, heightRatio);
+				resolve({
+					width: Math.max(100, Math.round(image.naturalWidth * ratio)),
+					height: Math.max(80, Math.round(image.naturalHeight * ratio)),
+				});
+			};
+			image.onerror = () => resolve({ width: 220, height: 140 });
+			image.src = dataUrl;
+		});
+
+		const clamped = clampToCanvas(
+			dom.canvas,
+			positionX - initialSize.width / 2,
+			positionY - initialSize.height / 2,
+			initialSize.width,
+			initialSize.height,
+		);
+
+		const imageItem: ImageItem = {
+			id: createId(),
+			type: "image",
+			x: clamped.x,
+			y: clamped.y,
+			src: dataUrl,
+			width: initialSize.width,
+			height: initialSize.height,
+		};
+		currentBoard().items.push(imageItem);
+		renderItem(imageItem, true);
 	}
 
 	dom.canvas.addEventListener("dblclick", (event) => {
@@ -1063,6 +1222,7 @@ export function initNotesCanvas(): void {
 
 			const noteTarget = target?.closest(".note");
 			const groupTarget = target?.closest(".group-item");
+			const imageTarget = target?.closest(".image-item");
 			if (noteTarget instanceof HTMLElement && !noteTarget.classList.contains("is-editing")) {
 				const noteId = noteTarget.dataset.itemId;
 				if (noteId && findNoteInCurrentBoard(noteId)) {
@@ -1074,6 +1234,13 @@ export function initNotesCanvas(): void {
 				const groupId = groupTarget.dataset.itemId;
 				if (groupId && findGroupInCurrentBoard(groupId)) {
 					setSingleSelectedItem(groupId);
+					return;
+				}
+			}
+			if (imageTarget instanceof HTMLElement) {
+				const imageId = imageTarget.dataset.itemId;
+				if (imageId && currentBoard().items.some((item) => item.type === "image" && item.id === imageId)) {
+					setSingleSelectedItem(imageId);
 					return;
 				}
 			}
@@ -1182,6 +1349,15 @@ export function initNotesCanvas(): void {
 		}
 		createGroupAt(contextMenuState.point.x, contextMenuState.point.y);
 		closeContextMenu();
+	});
+
+	dom.createImageAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "canvas") {
+			return;
+		}
+		const point = contextMenuState.point;
+		closeContextMenu();
+		void createImageAt(point.x, point.y);
 	});
 
 	dom.renameGroupAction.addEventListener("click", () => {
@@ -1384,7 +1560,12 @@ export function initNotesCanvas(): void {
 				if (!item) {
 					continue;
 				}
-				const removed = item.type === "note" ? removeNoteById(id) : removeGroupById(id);
+				const removed =
+					item.type === "note"
+						? removeNoteById(id)
+						: item.type === "group"
+							? removeGroupById(id)
+							: removeImageById(id);
 				removedAny = removedAny || removed;
 			}
 			if (removedAny) {

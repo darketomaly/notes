@@ -1134,7 +1134,6 @@ export function initNotesCanvas(): void {
 						Boolean(singleDraggedItem.parentOrganizerId);
 					if (
 						draggedItems.length === 1 &&
-						draggedItems[0].data.type !== "organizer" &&
 						!isOrganizerManagedItem &&
 						!hoveredDropOrganizer
 					) {
@@ -2237,6 +2236,13 @@ export function initNotesCanvas(): void {
 	});
 
 	document.addEventListener("keydown", (event) => {
+		const target = event.target;
+		const targetIsActiveEditableControl =
+			target instanceof HTMLElement &&
+			((target.tagName === "INPUT" && !(target as HTMLInputElement).disabled) ||
+				(target.tagName === "TEXTAREA" && !(target as HTMLTextAreaElement).disabled) ||
+				target.isContentEditable);
+
 		if (event.key === "Escape") {
 			if (activeRichEditor) {
 				activeRichEditor.blur();
@@ -2247,13 +2253,32 @@ export function initNotesCanvas(): void {
 			stopMarqueeSelection();
 		}
 
+		if (event.key === "F2") {
+			if (activeRichEditor || targetIsActiveEditableControl) {
+				return;
+			}
+			if (selectedItemIds.size !== 1) {
+				return;
+			}
+
+			const selectedId = Array.from(selectedItemIds)[0];
+			const selectedItem = currentBoard().items.find((candidate) => candidate.id === selectedId);
+			if (!selectedItem) {
+				return;
+			}
+
+			if (selectedItem.type === "group") {
+				event.preventDefault();
+				startGroupEditingById(selectedItem.id);
+				return;
+			}
+			if (selectedItem.type === "organizer") {
+				event.preventDefault();
+				startOrganizerEditingById(selectedItem.id);
+			}
+		}
+
 		if (event.key === "Delete") {
-			const target = event.target;
-			const targetIsActiveEditableControl =
-				target instanceof HTMLElement &&
-				((target.tagName === "INPUT" && !(target as HTMLInputElement).disabled) ||
-					(target.tagName === "TEXTAREA" && !(target as HTMLTextAreaElement).disabled) ||
-					target.isContentEditable);
 			if (
 				activeRichEditor ||
 				targetIsActiveEditableControl

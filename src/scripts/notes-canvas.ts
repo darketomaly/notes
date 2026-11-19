@@ -1,79 +1,38 @@
 import interact from "interactjs";
-
-const NOTE_WIDTH = 240;
-const NOTE_HEIGHT = 46;
-const GROUP_WIDTH = 150;
-const GROUP_HEIGHT = 44;
-const ORGANIZER_WIDTH = 360;
-const ORGANIZER_HEIGHT = 220;
-const ORGANIZER_HEADER_HEIGHT = 38;
-const ORGANIZER_BODY_INSET = 10;
-const ORGANIZER_GRID_SIZE = 14;
-const EDGE_PADDING = 12;
-const DRAG_SNAP_DISTANCE = 14;
-const CONTEXT_MENU_WIDTH = 170;
-const CONTEXT_MENU_HEIGHT = 84;
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-type Point = { x: number; y: number };
-
-type CanvasItem = NoteItem | GroupItem | ImageItem | OrganizerItem;
-type ContainableItem = NoteItem | GroupItem | ImageItem;
-
-interface Board {
-	id: string;
-	title: string;
-	items: CanvasItem[];
-	connections: Connection[];
-}
-
-interface BaseItem {
-	id: string;
-	x: number;
-	y: number;
-}
-
-interface NoteItem extends BaseItem {
-	type: "note";
-	htmlContent: string;
-	typingBold: boolean;
-	width?: number;
-	height?: number | null;
-	minHeight?: number;
-	parentOrganizerId?: string;
-}
-
-interface GroupItem extends BaseItem {
-	type: "group";
-	title: string;
-	board: Board;
-	backgroundImageUrl?: string;
-	width?: number;
-	parentOrganizerId?: string;
-}
-
-interface ImageItem extends BaseItem {
-	type: "image";
-	src: string;
-	width: number;
-	height: number;
-	parentOrganizerId?: string;
-}
-
-interface OrganizerItem extends BaseItem {
-	type: "organizer";
-	title: string;
-	width: number;
-	height: number;
-	minWidth?: number;
-	minHeight?: number;
-}
-
-interface Connection {
-	id: string;
-	fromItemId: string;
-	toItemId: string;
-}
+import {
+	CONTEXT_MENU_HEIGHT,
+	CONTEXT_MENU_WIDTH,
+	DRAG_SNAP_DISTANCE,
+	EDGE_PADDING,
+	GROUP_HEIGHT,
+	GROUP_WIDTH,
+	NOTE_HEIGHT,
+	NOTE_WIDTH,
+	ORGANIZER_HEADER_HEIGHT,
+	ORGANIZER_HEIGHT,
+	ORGANIZER_WIDTH,
+	SVG_NS,
+	clampToCanvas,
+	createBoard,
+	createId,
+	getItemFallbackSize,
+	getRelativePoint,
+	type Board,
+	type CanvasItem,
+	type Connection,
+	type ContainableItem,
+	type GroupItem,
+	type ImageItem,
+	type NoteItem,
+	type OrganizerItem,
+	type Point,
+} from "./notes-canvas-model";
+import {
+	getOrganizerBodyBounds as getOrganizerBodyBoundsImpl,
+	isContainableItem,
+	layoutOrganizerItems as layoutOrganizerItemsImpl,
+	resolveOrganizerForPoint as resolveOrganizerForPointImpl,
+} from "./notes-canvas-organizer";
 
 interface ConnectionDraft {
 	fixedItemId: string;
@@ -109,52 +68,6 @@ type ContextMenuState =
 	| { type: "note"; noteId: string }
 	| { type: "image"; imageId: string }
 	| { type: "connection"; connectionId: string };
-
-function createId(): string {
-	if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-		return crypto.randomUUID();
-	}
-	return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function createBoard(title: string): Board {
-	return { id: createId(), title, items: [], connections: [] };
-}
-
-function clampToCanvas(
-	canvas: HTMLElement,
-	positionX: number,
-	positionY: number,
-	itemWidth: number,
-	itemHeight: number,
-): Point {
-	const bounds = canvas.getBoundingClientRect();
-	const maxLeft = Math.max(EDGE_PADDING, bounds.width - itemWidth - EDGE_PADDING);
-	const maxTop = Math.max(EDGE_PADDING, bounds.height - itemHeight - EDGE_PADDING);
-
-	return {
-		x: Math.min(Math.max(positionX, EDGE_PADDING), maxLeft),
-		y: Math.min(Math.max(positionY, EDGE_PADDING), maxTop),
-	};
-}
-
-function getRelativePoint(canvas: HTMLElement, clientX: number, clientY: number): Point {
-	const bounds = canvas.getBoundingClientRect();
-	return { x: clientX - bounds.left, y: clientY - bounds.top };
-}
-
-function getItemFallbackSize(item: CanvasItem): { width: number; height: number } {
-	if (item.type === "note") {
-		return { width: item.width ?? NOTE_WIDTH, height: item.height ?? item.minHeight ?? NOTE_HEIGHT };
-	}
-	if (item.type === "group") {
-		return { width: item.width ?? GROUP_WIDTH, height: GROUP_HEIGHT };
-	}
-	if (item.type === "image") {
-		return { width: item.width, height: item.height };
-	}
-	return { width: item.width, height: item.height };
-}
 
 export function initNotesCanvas(): void {
 	const canvas = document.getElementById("canvas");
@@ -478,36 +391,6 @@ export function initNotesCanvas(): void {
 		return items.find((item): item is ImageItem => item.type === "image" && item.id === imageId);
 	}
 
-	function isContainableItem(item: CanvasItem): item is ContainableItem {
-		return item.type === "note" || item.type === "group" || item.type === "image";
-	}
-
-	function getOrganizerBodyBounds(organizer: OrganizerItem): {
-		left: number;
-		top: number;
-		right: number;
-		bottom: number;
-	} {
-		return {
-			left: organizer.x + ORGANIZER_BODY_INSET,
-			top: organizer.y + ORGANIZER_HEADER_HEIGHT + ORGANIZER_BODY_INSET,
-			right: organizer.x + organizer.width - ORGANIZER_BODY_INSET,
-			bottom: organizer.y + organizer.height - ORGANIZER_BODY_INSET,
-		};
-	}
-
-	function isPointInsideBounds(
-		point: Point,
-		bounds: { left: number; top: number; right: number; bottom: number },
-	): boolean {
-		return (
-			point.x >= bounds.left &&
-			point.x <= bounds.right &&
-			point.y >= bounds.top &&
-			point.y <= bounds.bottom
-		);
-	}
-
 	function resolveOrganizerForDroppedItem(
 		item: ContainableItem,
 		itemElement: HTMLElement,
@@ -520,26 +403,20 @@ export function initNotesCanvas(): void {
 		point: Point,
 		ignoreItemId?: string,
 	): OrganizerItem | null {
-		const organizers = currentBoard().items.filter(
-			(candidate): candidate is OrganizerItem => candidate.type === "organizer",
+		return resolveOrganizerForPointImpl(
+			point,
+			currentBoard(),
+			ORGANIZER_HEADER_HEIGHT,
+			ignoreItemId,
 		);
-
-		for (let index = organizers.length - 1; index >= 0; index -= 1) {
-			const organizer = organizers[index];
-			if (ignoreItemId && organizer.id === ignoreItemId) {
-				continue;
-			}
-			const bounds = getOrganizerBodyBounds(organizer);
-			if (isPointInsideBounds(point, bounds)) {
-				return organizer;
-			}
-		}
-
-		return null;
 	}
 
-	function clampInsideOrganizer(item: ContainableItem, itemElement: HTMLElement, organizer: OrganizerItem): void {
-		const bounds = getOrganizerBodyBounds(organizer);
+	function clampInsideOrganizer(
+		item: ContainableItem,
+		itemElement: HTMLElement,
+		organizer: OrganizerItem,
+	): void {
+		const bounds = getOrganizerBodyBoundsImpl(organizer, ORGANIZER_HEADER_HEIGHT);
 		const itemWidth = itemElement.offsetWidth || NOTE_WIDTH;
 		const itemHeight = itemElement.offsetHeight || NOTE_HEIGHT;
 		const maxX = Math.max(bounds.left, bounds.right - itemWidth);
@@ -551,77 +428,13 @@ export function initNotesCanvas(): void {
 	}
 
 	function layoutOrganizerItems(organizerId: string): void {
-		const organizer = findOrganizerInCurrentBoard(organizerId);
-		if (!organizer) {
-			return;
-		}
-		if (!organizer.minWidth) {
-			organizer.minWidth = organizer.width;
-		}
-		if (!organizer.minHeight) {
-			organizer.minHeight = organizer.height;
-		}
-
-		const bounds = getOrganizerBodyBounds(organizer);
-		const availableBodyWidth = Math.max(
-			1,
-			organizer.width - ORGANIZER_BODY_INSET * 2,
-		);
-		const bodyRight = bounds.left + availableBodyWidth;
-		let cursorX = bounds.left;
-		let cursorY = bounds.top;
-		let rowHeight = 0;
-		let usedRight = bounds.left;
-		let usedBottom = bounds.top;
-
-		const containedItems = currentBoard().items.filter(
-			(candidate): candidate is ContainableItem =>
-				isContainableItem(candidate) && candidate.parentOrganizerId === organizerId,
-		);
-
-		for (const contained of containedItems) {
-			const element = itemElements.get(contained.id);
-			const fallbackSize = getItemFallbackSize(contained);
-			const itemWidth = element?.offsetWidth ?? fallbackSize.width;
-			const itemHeight = element?.offsetHeight ?? fallbackSize.height;
-
-			if (cursorX > bounds.left && cursorX + itemWidth > bodyRight) {
-				cursorX = bounds.left;
-				cursorY += rowHeight + ORGANIZER_GRID_SIZE;
-				rowHeight = 0;
-			}
-
-			contained.x = cursorX;
-			contained.y = cursorY;
-
-			if (element) {
-				element.style.left = `${contained.x}px`;
-				element.style.top = `${contained.y}px`;
-			}
-			usedRight = Math.max(usedRight, contained.x + itemWidth);
-			usedBottom = Math.max(usedBottom, contained.y + itemHeight);
-
-			cursorX = contained.x + itemWidth + ORGANIZER_GRID_SIZE;
-			rowHeight = Math.max(rowHeight, itemHeight);
-		}
-
-		const requiredWidth = Math.max(
-			organizer.minWidth,
-			Math.ceil(usedRight - organizer.x + ORGANIZER_BODY_INSET),
-		);
-		const requiredHeight = Math.max(
-			organizer.minHeight,
-			Math.ceil(usedBottom - organizer.y + ORGANIZER_BODY_INSET),
-		);
-		if (requiredWidth !== organizer.width || requiredHeight !== organizer.height) {
-			organizer.width = requiredWidth;
-			organizer.height = requiredHeight;
-			const organizerElement = itemElements.get(organizer.id);
-			if (organizerElement) {
-				organizerElement.style.width = `${organizer.width}px`;
-				organizerElement.style.height = `${organizer.height}px`;
-			}
-		}
+		layoutOrganizerItemsImpl({
+			board: currentBoard(),
+			organizerId,
+			getElement: (id) => itemElements.get(id),
+			getItemFallbackSize,
+			headerHeight: ORGANIZER_HEADER_HEIGHT,
+		});
 	}
 
 	function canConnectItem(item: CanvasItem): boolean {

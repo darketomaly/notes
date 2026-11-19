@@ -40,6 +40,7 @@ interface DomRefs {
 	contextMenu: HTMLElement;
 	createNoteAction: HTMLButtonElement;
 	createGroupAction: HTMLButtonElement;
+	renameGroupAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
 	deleteNoteAction: HTMLButtonElement;
 	boardBreadcrumbs: HTMLElement;
@@ -88,6 +89,7 @@ export function initNotesCanvas(): void {
 	const contextMenu = document.getElementById("context-menu");
 	const createNoteAction = document.getElementById("create-note-action");
 	const createGroupAction = document.getElementById("create-group-action");
+	const renameGroupAction = document.getElementById("rename-group-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
 	const deleteNoteAction = document.getElementById("delete-note-action");
 	const boardBreadcrumbs = document.getElementById("board-breadcrumbs");
@@ -97,6 +99,7 @@ export function initNotesCanvas(): void {
 		!(contextMenu instanceof HTMLElement) ||
 		!(createNoteAction instanceof HTMLButtonElement) ||
 		!(createGroupAction instanceof HTMLButtonElement) ||
+		!(renameGroupAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
 		!(deleteNoteAction instanceof HTMLButtonElement) ||
 		!(boardBreadcrumbs instanceof HTMLElement)
@@ -114,6 +117,7 @@ export function initNotesCanvas(): void {
 		contextMenu,
 		createNoteAction,
 		createGroupAction,
+		renameGroupAction,
 		deleteGroupAction,
 		deleteNoteAction,
 		boardBreadcrumbs,
@@ -136,6 +140,7 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "canvas", point };
 		dom.createNoteAction.hidden = false;
 		dom.createGroupAction.hidden = false;
+		dom.renameGroupAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
 	}
@@ -144,6 +149,7 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "group", groupId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.renameGroupAction.hidden = false;
 		dom.deleteGroupAction.hidden = false;
 		dom.deleteNoteAction.hidden = true;
 	}
@@ -152,6 +158,7 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "note", noteId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.renameGroupAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.deleteNoteAction.hidden = false;
 	}
@@ -208,7 +215,47 @@ export function initNotesCanvas(): void {
 	}
 
 	function getMenuHeight(): number {
-		return dom.createNoteAction.hidden ? 52 : CONTEXT_MENU_HEIGHT;
+		const visibleActions = dom.contextMenu.querySelectorAll("button:not([hidden])").length;
+		const actionHeight = 38;
+		const verticalPadding = 12;
+		return Math.max(52, visibleActions * actionHeight + verticalPadding);
+	}
+
+	function clearBrowserSelection(): void {
+		const selection = window.getSelection();
+		if (selection) {
+			selection.removeAllRanges();
+		}
+	}
+
+	function exitInlineEditMode(container: HTMLElement, input: HTMLInputElement): void {
+		input.selectionStart = 0;
+		input.selectionEnd = 0;
+		input.disabled = true;
+		container.classList.remove("is-editing");
+		clearBrowserSelection();
+	}
+
+	function startGroupEditingById(groupId: string): void {
+		for (const candidate of dom.canvas.querySelectorAll(".group-item")) {
+			if (!(candidate instanceof HTMLElement)) {
+				continue;
+			}
+			if (candidate.dataset.itemId !== groupId) {
+				continue;
+			}
+
+			const input = candidate.querySelector("input");
+			if (!(input instanceof HTMLInputElement)) {
+				return;
+			}
+
+			candidate.classList.add("is-editing");
+			input.disabled = false;
+			input.focus();
+			input.select();
+			return;
+		}
 	}
 
 	function makeDraggable(element: HTMLElement, item: CanvasItem): void {
@@ -267,8 +314,7 @@ export function initNotesCanvas(): void {
 				input.select();
 			});
 			input.addEventListener("blur", () => {
-				input.disabled = true;
-				note.classList.remove("is-editing");
+				exitInlineEditMode(note, input);
 			});
 			input.addEventListener("keydown", (event) => {
 				if (event.key === "Enter" || event.key === "Escape") {
@@ -286,18 +332,50 @@ export function initNotesCanvas(): void {
 				});
 			}
 		} else {
-			const groupButton = document.createElement("button");
-			groupButton.type = "button";
-			groupButton.className = "group-item item";
-			groupButton.textContent = item.title;
-			groupButton.setAttribute("aria-label", `Open group ${item.title}`);
-			groupButton.addEventListener("dblclick", (event) => {
+			const groupItem = document.createElement("div");
+			groupItem.className = "group-item item";
+			const input = document.createElement("input");
+			input.type = "text";
+			input.value = item.title;
+			input.disabled = true;
+			input.setAttribute("aria-label", `Group title ${item.title}`);
+			input.addEventListener("input", () => {
+				item.title = input.value || "Untitled group";
+				refreshBoardHeader();
+			});
+			input.addEventListener("blur", () => {
+				if (!input.value.trim()) {
+					input.value = "Untitled group";
+				}
+				item.title = input.value;
+				exitInlineEditMode(groupItem, input);
+				refreshBoardHeader();
+			});
+			input.addEventListener("keydown", (event) => {
+				if (event.key === "Enter" || event.key === "Escape") {
+					input.blur();
+				}
+			});
+			groupItem.addEventListener("dblclick", (event) => {
 				event.preventDefault();
 				event.stopPropagation();
+				if (groupItem.classList.contains("is-editing")) {
+					return;
+				}
 				boardStack.push(item.board);
 				renderBoard();
 			});
-			element = groupButton;
+			groupItem.appendChild(input);
+			element = groupItem;
+
+			if (focusInput) {
+				queueMicrotask(() => {
+					groupItem.classList.add("is-editing");
+					input.disabled = false;
+					input.focus();
+					input.select();
+				});
+			}
 		}
 
 		element.dataset.itemId = item.id;
@@ -345,7 +423,7 @@ export function initNotesCanvas(): void {
 			board: createBoard(`Group ${groupCount}`),
 		};
 		current.items.push(group);
-		renderItem(group);
+		renderItem(group, true);
 	}
 
 	dom.canvas.addEventListener("dblclick", (event) => {
@@ -377,8 +455,12 @@ export function initNotesCanvas(): void {
 				return;
 			}
 			showNoteMenu(noteId);
-		} else
-		if (groupTarget instanceof HTMLElement) {
+		} else if (groupTarget instanceof HTMLElement) {
+			if (groupTarget.classList.contains("is-editing")) {
+				closeContextMenu();
+				return;
+			}
+
 			const groupId = groupTarget.dataset.itemId;
 			if (!groupId || !findGroupInCurrentBoard(groupId)) {
 				closeContextMenu();
@@ -417,6 +499,14 @@ export function initNotesCanvas(): void {
 			return;
 		}
 		createGroupAt(contextMenuState.point.x, contextMenuState.point.y);
+		closeContextMenu();
+	});
+
+	dom.renameGroupAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "group") {
+			return;
+		}
+		startGroupEditingById(contextMenuState.groupId);
 		closeContextMenu();
 	});
 

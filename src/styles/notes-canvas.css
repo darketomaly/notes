@@ -216,7 +216,9 @@ body {
 
 .note-editor[contenteditable="false"] {
 	cursor: move;
-	pointer-events: none;
+	pointer-events: auto;
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 .note.is-editing {
@@ -234,6 +236,40 @@ body {
 .note.is-height-locked .note-editor {
 	height: 100%;
 	overflow: auto;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(var(--glow-rgb), 0.55) rgba(255, 255, 255, 0.06);
+}
+
+.note.is-height-locked .note-editor[contenteditable="false"] {
+	cursor: default;
+}
+
+.note.is-height-locked .note-editor::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.note.is-height-locked .note-editor::-webkit-scrollbar-track {
+	background: rgba(255, 255, 255, 0.06);
+	border-radius: 999px;
+}
+
+.note.is-height-locked .note-editor::-webkit-scrollbar-thumb {
+	background: linear-gradient(
+		180deg,
+		rgba(var(--glow-rgb), 0.72),
+		rgba(var(--glow-rgb), 0.48)
+	);
+	border-radius: 999px;
+	border: 2px solid rgba(20, 20, 20, 0.72);
+}
+
+.note.is-height-locked .note-editor::-webkit-scrollbar-thumb:hover {
+	background: linear-gradient(
+		180deg,
+		rgba(var(--glow-rgb), 0.84),
+		rgba(var(--glow-rgb), 0.58)
+	);
 }
 
 .note-resize-handle {

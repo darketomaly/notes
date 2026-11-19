@@ -797,7 +797,8 @@ export function initNotesCanvas(): void {
 		let draggedIds: string[] = [item.id];
 
 		interact(element).draggable({
-			ignoreFrom: "input, textarea, [contenteditable='true'], .image-resize-handle, .note-resize-handle",
+			ignoreFrom:
+				"input, textarea, [contenteditable='true'], .image-resize-handle, .note-resize-handle",
 			listeners: {
 				start() {
 					closeContextMenu();

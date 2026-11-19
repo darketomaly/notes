@@ -674,6 +674,12 @@ export function initNotesCanvas(): void {
 		element.dataset.itemType = item.type;
 		element.style.left = `${item.x}px`;
 		element.style.top = `${item.y}px`;
+		if (focusInput) {
+			element.classList.add("is-spawning");
+			window.setTimeout(() => {
+				element.classList.remove("is-spawning");
+			}, 260);
+		}
 		dom.canvas.appendChild(element);
 		if (item.type === "note") {
 			noteElements.set(item.id, element);

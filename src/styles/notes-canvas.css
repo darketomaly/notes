@@ -36,6 +36,36 @@ body {
 		#171717;
 }
 
+.connections-layer {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 1;
+}
+
+.connection-arrowhead {
+	fill: #d8ecff;
+	filter: drop-shadow(0 0 5px rgba(var(--glow-rgb), 0.95))
+		drop-shadow(0 0 12px rgba(var(--glow-rgb), 0.6));
+}
+
+.connection-line,
+.connection-preview {
+	stroke: #d8ecff;
+	stroke-width: 2.2;
+	stroke-linecap: round;
+	filter: drop-shadow(0 0 5px rgba(var(--glow-rgb), 0.95))
+		drop-shadow(0 0 12px rgba(var(--glow-rgb), 0.62))
+		drop-shadow(0 0 20px rgba(var(--glow-rgb), 0.38));
+}
+
+.connection-preview {
+	stroke-dasharray: 6 6;
+	opacity: 0.98;
+}
+
 .toolbar {
 	position: absolute;
 	top: 1rem;
@@ -94,6 +124,7 @@ body {
 
 .note {
 	position: absolute;
+	z-index: 2;
 	width: 240px;
 	padding: 0.55rem 0.65rem;
 	border: 1px solid #484848;
@@ -160,6 +191,7 @@ body {
 
 .group-item {
 	position: absolute;
+	z-index: 2;
 	min-width: 150px;
 	border: 1px solid #5a5a5a;
 	border-radius: 0.6rem;

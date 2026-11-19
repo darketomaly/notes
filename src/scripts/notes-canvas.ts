@@ -7,6 +7,7 @@ const GROUP_HEIGHT = 44;
 const EDGE_PADDING = 12;
 const CONTEXT_MENU_WIDTH = 170;
 const CONTEXT_MENU_HEIGHT = 84;
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 type Point = { x: number; y: number };
 
@@ -16,6 +17,7 @@ interface Board {
 	id: string;
 	title: string;
 	items: CanvasItem[];
+	connections: Connection[];
 }
 
 interface BaseItem {
@@ -35,6 +37,12 @@ interface GroupItem extends BaseItem {
 	board: Board;
 }
 
+interface Connection {
+	id: string;
+	fromNoteId: string;
+	toNoteId: string;
+}
+
 interface DomRefs {
 	canvas: HTMLElement;
 	contextMenu: HTMLElement;
@@ -42,8 +50,11 @@ interface DomRefs {
 	createGroupAction: HTMLButtonElement;
 	renameGroupAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
+	connectNoteAction: HTMLButtonElement;
 	deleteNoteAction: HTMLButtonElement;
 	boardBreadcrumbs: HTMLElement;
+	connectionsPermanent: SVGGElement;
+	connectionPreview: SVGLineElement;
 }
 
 type ContextMenuState =
@@ -59,7 +70,7 @@ function createId(): string {
 }
 
 function createBoard(title: string): Board {
-	return { id: createId(), title, items: [] };
+	return { id: createId(), title, items: [], connections: [] };
 }
 
 function clampToCanvas(
@@ -91,8 +102,11 @@ export function initNotesCanvas(): void {
 	const createGroupAction = document.getElementById("create-group-action");
 	const renameGroupAction = document.getElementById("rename-group-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
+	const connectNoteAction = document.getElementById("connect-note-action");
 	const deleteNoteAction = document.getElementById("delete-note-action");
 	const boardBreadcrumbs = document.getElementById("board-breadcrumbs");
+	const connectionsPermanent = document.getElementById("connections-permanent");
+	const connectionPreview = document.getElementById("connection-preview");
 
 	if (
 		!(canvas instanceof HTMLElement) ||
@@ -101,8 +115,11 @@ export function initNotesCanvas(): void {
 		!(createGroupAction instanceof HTMLButtonElement) ||
 		!(renameGroupAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
+		!(connectNoteAction instanceof HTMLButtonElement) ||
 		!(deleteNoteAction instanceof HTMLButtonElement) ||
-		!(boardBreadcrumbs instanceof HTMLElement)
+		!(boardBreadcrumbs instanceof HTMLElement) ||
+		!(connectionsPermanent instanceof SVGGElement) ||
+		!(connectionPreview instanceof SVGLineElement)
 	) {
 		return;
 	}
@@ -119,13 +136,19 @@ export function initNotesCanvas(): void {
 		createGroupAction,
 		renameGroupAction,
 		deleteGroupAction,
+		connectNoteAction,
 		deleteNoteAction,
 		boardBreadcrumbs,
+		connectionsPermanent,
+		connectionPreview,
 	};
 
 	let contextMenuState: ContextMenuState | null = null;
 	const rootBoard = createBoard("Home");
 	const boardStack: Board[] = [rootBoard];
+	const noteElements = new Map<string, HTMLElement>();
+	let connectionPreviewFromNoteId: string | null = null;
+	let connectionPreviewMousePoint: Point | null = null;
 
 	function currentBoard(): Board {
 		return boardStack[boardStack.length - 1];
@@ -142,6 +165,7 @@ export function initNotesCanvas(): void {
 		dom.createGroupAction.hidden = false;
 		dom.renameGroupAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
+		dom.connectNoteAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
 	}
 
@@ -151,6 +175,7 @@ export function initNotesCanvas(): void {
 		dom.createGroupAction.hidden = true;
 		dom.renameGroupAction.hidden = false;
 		dom.deleteGroupAction.hidden = false;
+		dom.connectNoteAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
 	}
 
@@ -160,6 +185,7 @@ export function initNotesCanvas(): void {
 		dom.createGroupAction.hidden = true;
 		dom.renameGroupAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
+		dom.connectNoteAction.hidden = false;
 		dom.deleteNoteAction.hidden = false;
 	}
 
@@ -219,6 +245,75 @@ export function initNotesCanvas(): void {
 		const actionHeight = 38;
 		const verticalPadding = 12;
 		return Math.max(52, visibleActions * actionHeight + verticalPadding);
+	}
+
+	function getElementCenter(element: HTMLElement): Point {
+		return {
+			x: element.offsetLeft + element.offsetWidth / 2,
+			y: element.offsetTop + element.offsetHeight / 2,
+		};
+	}
+
+	function clearConnectionPreview(): void {
+		connectionPreviewFromNoteId = null;
+		connectionPreviewMousePoint = null;
+		dom.connectionPreview.hidden = true;
+		dom.connectionPreview.style.display = "none";
+		dom.connectionPreview.setAttribute("visibility", "hidden");
+	}
+
+	function renderConnections(): void {
+		const board = currentBoard();
+		dom.connectionsPermanent.replaceChildren();
+
+		board.connections = board.connections.filter(
+			(connection) =>
+				noteElements.has(connection.fromNoteId) && noteElements.has(connection.toNoteId),
+		);
+
+		for (const connection of board.connections) {
+			const fromElement = noteElements.get(connection.fromNoteId);
+			const toElement = noteElements.get(connection.toNoteId);
+			if (!fromElement || !toElement) {
+				continue;
+			}
+
+			const from = getElementCenter(fromElement);
+			const to = getElementCenter(toElement);
+			const line = document.createElementNS(SVG_NS, "line");
+			line.setAttribute("x1", String(from.x));
+			line.setAttribute("y1", String(from.y));
+			line.setAttribute("x2", String(to.x));
+			line.setAttribute("y2", String(to.y));
+			line.classList.add("connection-line");
+			line.setAttribute("marker-end", "url(#connection-arrowhead)");
+			dom.connectionsPermanent.appendChild(line);
+		}
+	}
+
+	function refreshConnectionPreview(): void {
+		if (!connectionPreviewFromNoteId || !connectionPreviewMousePoint) {
+			dom.connectionPreview.hidden = true;
+			dom.connectionPreview.style.display = "none";
+			dom.connectionPreview.setAttribute("visibility", "hidden");
+			return;
+		}
+
+		const fromElement = noteElements.get(connectionPreviewFromNoteId);
+		if (!fromElement) {
+			clearConnectionPreview();
+			return;
+		}
+
+		const from = getElementCenter(fromElement);
+		dom.connectionPreview.setAttribute("x1", String(from.x));
+		dom.connectionPreview.setAttribute("y1", String(from.y));
+		dom.connectionPreview.setAttribute("x2", String(connectionPreviewMousePoint.x));
+		dom.connectionPreview.setAttribute("y2", String(connectionPreviewMousePoint.y));
+		dom.connectionPreview.setAttribute("marker-end", "url(#connection-arrowhead)");
+		dom.connectionPreview.hidden = false;
+		dom.connectionPreview.style.display = "inline";
+		dom.connectionPreview.setAttribute("visibility", "visible");
 	}
 
 	function clearBrowserSelection(): void {
@@ -293,6 +388,8 @@ export function initNotesCanvas(): void {
 					item.y = clamped.y;
 					target.style.left = `${item.x}px`;
 					target.style.top = `${item.y}px`;
+					renderConnections();
+					refreshConnectionPreview();
 				},
 			},
 		});
@@ -313,6 +410,8 @@ export function initNotesCanvas(): void {
 			textarea.addEventListener("input", () => {
 				autoSizeNoteTextarea(textarea);
 				item.text = textarea.value;
+				renderConnections();
+				refreshConnectionPreview();
 			});
 			note.addEventListener("dblclick", (event) => {
 				event.preventDefault();
@@ -325,6 +424,8 @@ export function initNotesCanvas(): void {
 			});
 			textarea.addEventListener("blur", () => {
 				exitInlineEditMode(note, textarea);
+				renderConnections();
+				refreshConnectionPreview();
 			});
 			textarea.addEventListener("keydown", (event) => {
 				if (event.key === "Escape") {
@@ -397,17 +498,23 @@ export function initNotesCanvas(): void {
 		element.style.left = `${item.x}px`;
 		element.style.top = `${item.y}px`;
 		dom.canvas.appendChild(element);
+		if (item.type === "note") {
+			noteElements.set(item.id, element);
+		}
 		makeDraggable(element, item);
 	}
 
 	function renderBoard(): void {
 		closeContextMenu();
+		noteElements.clear();
 		for (const element of dom.canvas.querySelectorAll(".item")) {
 			element.remove();
 		}
 		for (const item of currentBoard().items) {
 			renderItem(item);
 		}
+		renderConnections();
+		refreshConnectionPreview();
 		refreshBoardHeader();
 	}
 
@@ -500,6 +607,62 @@ export function initNotesCanvas(): void {
 		dom.contextMenu.hidden = false;
 	});
 
+	document.addEventListener("pointermove", (event) => {
+		if (!connectionPreviewFromNoteId) {
+			return;
+		}
+
+		connectionPreviewMousePoint = getRelativePoint(dom.canvas, event.clientX, event.clientY);
+		refreshConnectionPreview();
+	});
+
+	dom.canvas.addEventListener("click", (event) => {
+		if (!connectionPreviewFromNoteId) {
+			return;
+		}
+
+		const target = event.target instanceof HTMLElement ? event.target : null;
+		if (target && target.closest("#context-menu")) {
+			return;
+		}
+		const noteTarget = target?.closest(".note");
+		if (!(noteTarget instanceof HTMLElement)) {
+			clearConnectionPreview();
+			return;
+		}
+		if (noteTarget.classList.contains("is-editing")) {
+			clearConnectionPreview();
+			return;
+		}
+
+		const toNoteId = noteTarget.dataset.itemId;
+		if (!toNoteId || toNoteId === connectionPreviewFromNoteId) {
+			clearConnectionPreview();
+			return;
+		}
+		if (!findNoteInCurrentBoard(toNoteId) || !findNoteInCurrentBoard(connectionPreviewFromNoteId)) {
+			clearConnectionPreview();
+			return;
+		}
+
+		const hasDuplicate = currentBoard().connections.some(
+			(connection) =>
+				connection.fromNoteId === connectionPreviewFromNoteId &&
+				connection.toNoteId === toNoteId,
+		);
+
+		if (!hasDuplicate) {
+			currentBoard().connections.push({
+				id: createId(),
+				fromNoteId: connectionPreviewFromNoteId,
+				toNoteId,
+			});
+		}
+
+		clearConnectionPreview();
+		renderConnections();
+	});
+
 	dom.createNoteAction.addEventListener("click", () => {
 		if (!contextMenuState || contextMenuState.type !== "canvas") {
 			return;
@@ -522,6 +685,21 @@ export function initNotesCanvas(): void {
 		}
 		startGroupEditingById(contextMenuState.groupId);
 		closeContextMenu();
+	});
+
+	dom.connectNoteAction.addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+
+		if (!contextMenuState || contextMenuState.type !== "note") {
+			return;
+		}
+
+		connectionPreviewFromNoteId = contextMenuState.noteId;
+		const sourceElement = noteElements.get(contextMenuState.noteId);
+		connectionPreviewMousePoint = sourceElement ? getElementCenter(sourceElement) : null;
+		closeContextMenu();
+		refreshConnectionPreview();
 	});
 
 	dom.deleteGroupAction.addEventListener("click", () => {
@@ -557,13 +735,27 @@ export function initNotesCanvas(): void {
 			return;
 		}
 
+		const noteId = contextMenuState.noteId;
 		currentBoard().items.splice(index, 1);
+		currentBoard().connections = currentBoard().connections.filter(
+			(connection) =>
+				connection.fromNoteId !== noteId && connection.toNoteId !== noteId,
+		);
+		if (connectionPreviewFromNoteId === noteId) {
+			clearConnectionPreview();
+		}
 		renderBoard();
 		closeContextMenu();
 	});
 
 	document.addEventListener("pointerdown", (event) => {
 		const target = event.target;
+		if (
+			connectionPreviewFromNoteId &&
+			!(target instanceof HTMLElement && target.closest(".note"))
+		) {
+			clearConnectionPreview();
+		}
 		if (target instanceof HTMLElement && target.closest("#context-menu")) {
 			return;
 		}
@@ -573,6 +765,7 @@ export function initNotesCanvas(): void {
 	document.addEventListener("keydown", (event) => {
 		if (event.key === "Escape") {
 			closeContextMenu();
+			clearConnectionPreview();
 		}
 	});
 

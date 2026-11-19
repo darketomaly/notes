@@ -6,11 +6,29 @@ import "../styles/notes-canvas.css";
 	<div class="toolbar">
 		<nav class="breadcrumbs" id="board-breadcrumbs" aria-label="Board hierarchy"></nav>
 	</div>
+	<svg class="connections-layer" id="connections-layer" aria-hidden="true">
+		<defs>
+			<marker
+				id="connection-arrowhead"
+				viewBox="0 0 10 10"
+				refX="8.5"
+				refY="5"
+				markerWidth="8"
+				markerHeight="8"
+				orient="auto-start-reverse"
+			>
+				<path class="connection-arrowhead" d="M 0 0 L 10 5 L 0 10 z"></path>
+			</marker>
+		</defs>
+		<g id="connections-permanent"></g>
+		<line id="connection-preview" class="connection-preview" hidden></line>
+	</svg>
 	<div class="context-menu" id="context-menu" hidden>
 		<button type="button" id="create-note-action">Create note</button>
 		<button type="button" id="create-group-action">Create note group</button>
 		<button type="button" id="rename-group-action" hidden>Rename group</button>
 		<button type="button" id="delete-group-action" hidden>Delete group</button>
+		<button type="button" id="connect-note-action" hidden>Connect</button>
 		<button type="button" id="delete-note-action" hidden>Delete note</button>
 	</div>
 </main>

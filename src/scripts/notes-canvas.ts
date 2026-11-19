@@ -30,6 +30,8 @@ interface NoteItem extends BaseItem {
 	type: "note";
 	htmlContent: string;
 	typingBold: boolean;
+	width: number;
+	height: number;
 }
 
 interface GroupItem extends BaseItem {
@@ -794,7 +796,7 @@ export function initNotesCanvas(): void {
 		let draggedIds: string[] = [item.id];
 
 		interact(element).draggable({
-			ignoreFrom: "input, textarea, [contenteditable='true'], .image-resize-handle",
+			ignoreFrom: "input, textarea, [contenteditable='true'], .image-resize-handle, .note-resize-handle",
 			listeners: {
 				start() {
 					closeContextMenu();
@@ -857,6 +859,35 @@ export function initNotesCanvas(): void {
 		});
 	}
 
+	function makeResizableNote(element: HTMLElement, item: NoteItem): void {
+		interact(element).resizable({
+			edges: { right: ".note-resize-handle", bottom: ".note-resize-handle" },
+			listeners: {
+				start() {
+					closeContextMenu();
+				},
+				move(event) {
+					const canvasBounds = dom.canvas.getBoundingClientRect();
+					const width = Math.max(170, event.rect.width);
+					const height = Math.max(46, event.rect.height);
+					const clamped = clampToCanvas(dom.canvas, item.x, item.y, width, height);
+					const maxWidth = Math.max(170, canvasBounds.width - clamped.x - EDGE_PADDING);
+					const maxHeight = Math.max(46, canvasBounds.height - clamped.y - EDGE_PADDING);
+					item.width = Math.min(maxWidth, Math.max(170, width - (clamped.x - item.x)));
+					item.height = Math.min(maxHeight, Math.max(46, height - (clamped.y - item.y)));
+					item.x = clamped.x;
+					item.y = clamped.y;
+					element.style.left = `${item.x}px`;
+					element.style.top = `${item.y}px`;
+					element.style.width = `${item.width}px`;
+					element.style.height = `${item.height}px`;
+					renderConnections();
+					refreshConnectionPreview();
+				},
+			},
+		});
+	}
+
 	function makeResizableImage(element: HTMLElement, item: ImageItem): void {
 		interact(element).resizable({
 			edges: { right: ".image-resize-handle", bottom: ".image-resize-handle" },
@@ -890,6 +921,8 @@ export function initNotesCanvas(): void {
 		if (item.type === "note") {
 			const note = document.createElement("div");
 			note.className = "note item";
+			note.style.width = `${item.width}px`;
+			note.style.height = `${item.height}px`;
 			const editor = document.createElement("div");
 			editor.className = "note-editor";
 			editor.setAttribute("aria-label", "Note content");
@@ -958,7 +991,12 @@ export function initNotesCanvas(): void {
 				selection.addRange(range);
 				refreshBoldButtonState();
 			});
+			const resizeHandle = document.createElement("div");
+			resizeHandle.className = "note-resize-handle";
+			resizeHandle.setAttribute("aria-hidden", "true");
+
 			note.appendChild(editor);
+			note.appendChild(resizeHandle);
 			element = note;
 
 			if (focusInput) {
@@ -1056,6 +1094,9 @@ export function initNotesCanvas(): void {
 			noteElements.set(item.id, element);
 		}
 		makeDraggable(element, item);
+		if (item.type === "note") {
+			makeResizableNote(element, item);
+		}
 		if (item.type === "image") {
 			makeResizableImage(element, item);
 		}
@@ -1093,6 +1134,8 @@ export function initNotesCanvas(): void {
 			y: clamped.y,
 			htmlContent: "",
 			typingBold: false,
+			width: NOTE_WIDTH,
+			height: NOTE_HEIGHT,
 		};
 		currentBoard().items.push(note);
 		renderItem(note, true);

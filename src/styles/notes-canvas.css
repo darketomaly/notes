@@ -155,11 +155,14 @@ body {
 	position: absolute;
 	z-index: 2;
 	width: 240px;
+	min-width: 170px;
+	min-height: 46px;
 	padding: 0.55rem 0.65rem;
 	border: 1px solid #484848;
 	border-radius: 0.65rem;
 	background: #222;
 	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+	overflow: hidden;
 	cursor: move;
 	touch-action: none;
 	user-select: none;
@@ -193,13 +196,17 @@ body {
 }
 
 .note-editor {
+	position: relative;
+	z-index: 1;
 	width: 100%;
+	height: 100%;
 	min-height: 1.35em;
 	line-height: 1.35;
 	font: inherit;
 	color: #f5f5f5;
 	white-space: pre-wrap;
 	word-break: break-word;
+	overflow: auto;
 	outline: none;
 }
 
@@ -223,6 +230,21 @@ body {
 	user-select: text;
 	-webkit-user-select: text;
 	-webkit-touch-callout: default;
+}
+
+.note-resize-handle {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	width: 16px;
+	height: 16px;
+	border-top-left-radius: 0.5rem;
+	background: rgba(var(--glow-rgb), 0.45);
+	box-shadow:
+		inset 0 0 0 1px rgba(var(--glow-rgb), 0.66),
+		0 0 10px rgba(var(--glow-rgb), 0.25);
+	cursor: nwse-resize;
+	z-index: 2;
 }
 
 .group-item {

@@ -30,8 +30,9 @@ interface NoteItem extends BaseItem {
 	type: "note";
 	htmlContent: string;
 	typingBold: boolean;
-	width: number;
-	height: number;
+	width?: number;
+	height?: number | null;
+	minHeight?: number;
 }
 
 interface GroupItem extends BaseItem {
@@ -873,14 +874,37 @@ export function initNotesCanvas(): void {
 					const clamped = clampToCanvas(dom.canvas, item.x, item.y, width, height);
 					const maxWidth = Math.max(170, canvasBounds.width - clamped.x - EDGE_PADDING);
 					const maxHeight = Math.max(46, canvasBounds.height - clamped.y - EDGE_PADDING);
-					item.width = Math.min(maxWidth, Math.max(170, width - (clamped.x - item.x)));
-					item.height = Math.min(maxHeight, Math.max(46, height - (clamped.y - item.y)));
+					const nextWidth = Math.min(maxWidth, Math.max(170, width - (clamped.x - item.x)));
+					const nextHeight = Math.min(maxHeight, Math.max(46, height - (clamped.y - item.y)));
+					const editor = element.querySelector(".note-editor");
+					const noteStyles = window.getComputedStyle(element);
+					const verticalPadding =
+						parseFloat(noteStyles.paddingTop) + parseFloat(noteStyles.paddingBottom);
+					const contentHeight =
+						editor instanceof HTMLElement ? editor.scrollHeight : NOTE_HEIGHT;
+					const naturalHeight = Math.max(46, Math.ceil(contentHeight + verticalPadding));
+					item.width = nextWidth;
+					if (nextHeight < naturalHeight) {
+						item.height = nextHeight;
+						item.minHeight = 46;
+					} else {
+						item.height = null;
+						item.minHeight = nextHeight;
+					}
 					item.x = clamped.x;
 					item.y = clamped.y;
 					element.style.left = `${item.x}px`;
 					element.style.top = `${item.y}px`;
 					element.style.width = `${item.width}px`;
-					element.style.height = `${item.height}px`;
+					if (item.height === null) {
+						element.style.removeProperty("height");
+						element.style.minHeight = `${Math.max(46, item.minHeight ?? NOTE_HEIGHT)}px`;
+						element.classList.remove("is-height-locked");
+					} else {
+						element.style.height = `${item.height}px`;
+						element.style.minHeight = "46px";
+						element.classList.add("is-height-locked");
+					}
 					renderConnections();
 					refreshConnectionPreview();
 				},
@@ -921,8 +945,14 @@ export function initNotesCanvas(): void {
 		if (item.type === "note") {
 			const note = document.createElement("div");
 			note.className = "note item";
-			note.style.width = `${item.width}px`;
-			note.style.height = `${item.height}px`;
+			note.style.width = `${item.width ?? NOTE_WIDTH}px`;
+			if (item.minHeight && item.minHeight > 46) {
+				note.style.minHeight = `${item.minHeight}px`;
+			}
+			if (item.height != null) {
+				note.style.height = `${item.height}px`;
+				note.classList.add("is-height-locked");
+			}
 			const editor = document.createElement("div");
 			editor.className = "note-editor";
 			editor.setAttribute("aria-label", "Note content");
@@ -1135,7 +1165,8 @@ export function initNotesCanvas(): void {
 			htmlContent: "",
 			typingBold: false,
 			width: NOTE_WIDTH,
-			height: NOTE_HEIGHT,
+			height: null,
+			minHeight: NOTE_HEIGHT,
 		};
 		currentBoard().items.push(note);
 		renderItem(note, true);

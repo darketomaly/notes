@@ -57,7 +57,6 @@ interface Connection {
 
 interface ConnectionDraft {
 	fixedItemId: string;
-	mode: "pick-target" | "pick-source";
 }
 
 interface DomRefs {
@@ -70,8 +69,6 @@ interface DomRefs {
 	replaceGroupBgAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
 	connectNoteAction: HTMLButtonElement;
-	connectImageToNoteAction: HTMLButtonElement;
-	connectImageFromNoteAction: HTMLButtonElement;
 	deleteImageAction: HTMLButtonElement;
 	deleteConnectionAction: HTMLButtonElement;
 	deleteNoteAction: HTMLButtonElement;
@@ -132,8 +129,6 @@ export function initNotesCanvas(): void {
 	const replaceGroupBgAction = document.getElementById("replace-group-bg-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
 	const connectNoteAction = document.getElementById("connect-note-action");
-	const connectImageToNoteAction = document.getElementById("connect-image-to-note-action");
-	const connectImageFromNoteAction = document.getElementById("connect-image-from-note-action");
 	const deleteImageAction = document.getElementById("delete-image-action");
 	const deleteConnectionAction = document.getElementById("delete-connection-action");
 	const deleteNoteAction = document.getElementById("delete-note-action");
@@ -153,8 +148,6 @@ export function initNotesCanvas(): void {
 		!(replaceGroupBgAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
 		!(connectNoteAction instanceof HTMLButtonElement) ||
-		!(connectImageToNoteAction instanceof HTMLButtonElement) ||
-		!(connectImageFromNoteAction instanceof HTMLButtonElement) ||
 		!(deleteImageAction instanceof HTMLButtonElement) ||
 		!(deleteConnectionAction instanceof HTMLButtonElement) ||
 		!(deleteNoteAction instanceof HTMLButtonElement) ||
@@ -182,8 +175,6 @@ export function initNotesCanvas(): void {
 		replaceGroupBgAction,
 		deleteGroupAction,
 		connectNoteAction,
-		connectImageToNoteAction,
-		connectImageFromNoteAction,
 		deleteImageAction,
 		deleteConnectionAction,
 		deleteNoteAction,
@@ -230,8 +221,6 @@ export function initNotesCanvas(): void {
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
-		dom.connectImageToNoteAction.hidden = true;
-		dom.connectImageFromNoteAction.hidden = true;
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
@@ -246,8 +235,6 @@ export function initNotesCanvas(): void {
 		dom.replaceGroupBgAction.hidden = false;
 		dom.deleteGroupAction.hidden = false;
 		dom.connectNoteAction.hidden = true;
-		dom.connectImageToNoteAction.hidden = true;
-		dom.connectImageFromNoteAction.hidden = true;
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
@@ -262,8 +249,6 @@ export function initNotesCanvas(): void {
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = false;
-		dom.connectImageToNoteAction.hidden = true;
-		dom.connectImageFromNoteAction.hidden = true;
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = false;
@@ -277,9 +262,7 @@ export function initNotesCanvas(): void {
 		dom.renameGroupAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
-		dom.connectNoteAction.hidden = true;
-		dom.connectImageToNoteAction.hidden = false;
-		dom.connectImageFromNoteAction.hidden = false;
+		dom.connectNoteAction.hidden = false;
 		dom.deleteImageAction.hidden = false;
 		dom.deleteConnectionAction.hidden = true;
 		dom.deleteNoteAction.hidden = true;
@@ -294,8 +277,6 @@ export function initNotesCanvas(): void {
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
-		dom.connectImageToNoteAction.hidden = true;
-		dom.connectImageFromNoteAction.hidden = true;
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = false;
 		dom.deleteNoteAction.hidden = true;
@@ -355,6 +336,14 @@ export function initNotesCanvas(): void {
 	function findImageInCurrentBoard(imageId: string): ImageItem | undefined {
 		const items = currentBoard().items;
 		return items.find((item): item is ImageItem => item.type === "image" && item.id === imageId);
+	}
+
+	function beginConnectionFromItem(itemId: string): void {
+		connectionDraft = { fixedItemId: itemId };
+		const sourceElement = itemElements.get(itemId);
+		connectionPreviewMousePoint = sourceElement ? getElementCenter(sourceElement) : null;
+		closeContextMenu();
+		refreshConnectionPreview();
 	}
 
 	function getMenuHeight(): number {
@@ -734,19 +723,10 @@ export function initNotesCanvas(): void {
 		}
 
 		const fixedAnchor = getClosestEdgeAnchor(fixedElement, connectionPreviewMousePoint);
-		if (connectionDraft.mode === "pick-target") {
-			dom.connectionPreview.setAttribute("x1", String(fixedAnchor.x));
-			dom.connectionPreview.setAttribute("y1", String(fixedAnchor.y));
-			dom.connectionPreview.setAttribute("x2", String(connectionPreviewMousePoint.x));
-			dom.connectionPreview.setAttribute("y2", String(connectionPreviewMousePoint.y));
-		} else {
-			const sourcePoint = connectionPreviewMousePoint;
-			const targetAnchor = getClosestEdgeAnchor(fixedElement, sourcePoint);
-			dom.connectionPreview.setAttribute("x1", String(sourcePoint.x));
-			dom.connectionPreview.setAttribute("y1", String(sourcePoint.y));
-			dom.connectionPreview.setAttribute("x2", String(targetAnchor.x));
-			dom.connectionPreview.setAttribute("y2", String(targetAnchor.y));
-		}
+		dom.connectionPreview.setAttribute("x1", String(fixedAnchor.x));
+		dom.connectionPreview.setAttribute("y1", String(fixedAnchor.y));
+		dom.connectionPreview.setAttribute("x2", String(connectionPreviewMousePoint.x));
+		dom.connectionPreview.setAttribute("y2", String(connectionPreviewMousePoint.y));
 		dom.connectionPreview.setAttribute("marker-end", "url(#connection-arrowhead)");
 		dom.connectionPreview.hidden = false;
 		dom.connectionPreview.style.display = "inline";
@@ -1432,15 +1412,8 @@ export function initNotesCanvas(): void {
 			return;
 		}
 
-		let fromItemId: string;
-		let toItemId: string;
-		if (connectionDraft.mode === "pick-target") {
-			fromItemId = connectionDraft.fixedItemId;
-			toItemId = clickedItemId;
-		} else {
-			fromItemId = clickedItemId;
-			toItemId = connectionDraft.fixedItemId;
-		}
+		const fromItemId = connectionDraft.fixedItemId;
+		const toItemId = clickedItemId;
 
 		const isSupportedDirection =
 			(fixedItem.type === "note" && (clickedItem.type === "note" || clickedItem.type === "image")) ||
@@ -1595,45 +1568,15 @@ export function initNotesCanvas(): void {
 		event.preventDefault();
 		event.stopPropagation();
 
-		if (!contextMenuState || contextMenuState.type !== "note") {
+		if (
+			!contextMenuState ||
+			(contextMenuState.type !== "note" && contextMenuState.type !== "image")
+		) {
 			return;
 		}
-
-		connectionDraft = { fixedItemId: contextMenuState.noteId, mode: "pick-target" };
-		const sourceElement = itemElements.get(contextMenuState.noteId);
-		connectionPreviewMousePoint = sourceElement ? getElementCenter(sourceElement) : null;
-		closeContextMenu();
-		refreshConnectionPreview();
-	});
-
-	dom.connectImageToNoteAction.addEventListener("click", (event) => {
-		event.preventDefault();
-		event.stopPropagation();
-
-		if (!contextMenuState || contextMenuState.type !== "image") {
-			return;
-		}
-
-		connectionDraft = { fixedItemId: contextMenuState.imageId, mode: "pick-target" };
-		const sourceElement = itemElements.get(contextMenuState.imageId);
-		connectionPreviewMousePoint = sourceElement ? getElementCenter(sourceElement) : null;
-		closeContextMenu();
-		refreshConnectionPreview();
-	});
-
-	dom.connectImageFromNoteAction.addEventListener("click", (event) => {
-		event.preventDefault();
-		event.stopPropagation();
-
-		if (!contextMenuState || contextMenuState.type !== "image") {
-			return;
-		}
-
-		connectionDraft = { fixedItemId: contextMenuState.imageId, mode: "pick-source" };
-		const targetElement = itemElements.get(contextMenuState.imageId);
-		connectionPreviewMousePoint = targetElement ? getElementCenter(targetElement) : null;
-		closeContextMenu();
-		refreshConnectionPreview();
+		beginConnectionFromItem(
+			contextMenuState.type === "note" ? contextMenuState.noteId : contextMenuState.imageId,
+		);
 	});
 
 	dom.deleteGroupAction.addEventListener("click", () => {

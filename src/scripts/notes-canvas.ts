@@ -4,6 +4,11 @@ const NOTE_WIDTH = 240;
 const NOTE_HEIGHT = 46;
 const GROUP_WIDTH = 150;
 const GROUP_HEIGHT = 44;
+const ORGANIZER_WIDTH = 360;
+const ORGANIZER_HEIGHT = 220;
+const ORGANIZER_HEADER_HEIGHT = 38;
+const ORGANIZER_BODY_INSET = 10;
+const ORGANIZER_GRID_SIZE = 14;
 const EDGE_PADDING = 12;
 const DRAG_SNAP_DISTANCE = 14;
 const CONTEXT_MENU_WIDTH = 170;
@@ -12,7 +17,8 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 type Point = { x: number; y: number };
 
-type CanvasItem = NoteItem | GroupItem | ImageItem;
+type CanvasItem = NoteItem | GroupItem | ImageItem | OrganizerItem;
+type ContainableItem = NoteItem | GroupItem | ImageItem;
 
 interface Board {
 	id: string;
@@ -34,6 +40,7 @@ interface NoteItem extends BaseItem {
 	width?: number;
 	height?: number | null;
 	minHeight?: number;
+	parentOrganizerId?: string;
 }
 
 interface GroupItem extends BaseItem {
@@ -42,11 +49,20 @@ interface GroupItem extends BaseItem {
 	board: Board;
 	backgroundImageUrl?: string;
 	width?: number;
+	parentOrganizerId?: string;
 }
 
 interface ImageItem extends BaseItem {
 	type: "image";
 	src: string;
+	width: number;
+	height: number;
+	parentOrganizerId?: string;
+}
+
+interface OrganizerItem extends BaseItem {
+	type: "organizer";
+	title: string;
 	width: number;
 	height: number;
 }
@@ -66,10 +82,13 @@ interface DomRefs {
 	contextMenu: HTMLElement;
 	createNoteAction: HTMLButtonElement;
 	createGroupAction: HTMLButtonElement;
+	createOrganizerAction: HTMLButtonElement;
 	createImageAction: HTMLButtonElement;
 	renameGroupAction: HTMLButtonElement;
+	renameOrganizerAction: HTMLButtonElement;
 	replaceGroupBgAction: HTMLButtonElement;
 	deleteGroupAction: HTMLButtonElement;
+	deleteOrganizerAction: HTMLButtonElement;
 	connectNoteAction: HTMLButtonElement;
 	deleteImageAction: HTMLButtonElement;
 	deleteConnectionAction: HTMLButtonElement;
@@ -84,6 +103,7 @@ interface DomRefs {
 type ContextMenuState =
 	| { type: "canvas"; point: Point }
 	| { type: "group"; groupId: string }
+	| { type: "organizer"; organizerId: string }
 	| { type: "note"; noteId: string }
 	| { type: "image"; imageId: string }
 	| { type: "connection"; connectionId: string };
@@ -121,15 +141,31 @@ function getRelativePoint(canvas: HTMLElement, clientX: number, clientY: number)
 	return { x: clientX - bounds.left, y: clientY - bounds.top };
 }
 
+function getItemFallbackSize(item: CanvasItem): { width: number; height: number } {
+	if (item.type === "note") {
+		return { width: item.width ?? NOTE_WIDTH, height: item.height ?? item.minHeight ?? NOTE_HEIGHT };
+	}
+	if (item.type === "group") {
+		return { width: item.width ?? GROUP_WIDTH, height: GROUP_HEIGHT };
+	}
+	if (item.type === "image") {
+		return { width: item.width, height: item.height };
+	}
+	return { width: item.width, height: item.height };
+}
+
 export function initNotesCanvas(): void {
 	const canvas = document.getElementById("canvas");
 	const contextMenu = document.getElementById("context-menu");
 	const createNoteAction = document.getElementById("create-note-action");
 	const createGroupAction = document.getElementById("create-group-action");
+	const createOrganizerAction = document.getElementById("create-organizer-action");
 	const createImageAction = document.getElementById("create-image-action");
 	const renameGroupAction = document.getElementById("rename-group-action");
+	const renameOrganizerAction = document.getElementById("rename-organizer-action");
 	const replaceGroupBgAction = document.getElementById("replace-group-bg-action");
 	const deleteGroupAction = document.getElementById("delete-group-action");
+	const deleteOrganizerAction = document.getElementById("delete-organizer-action");
 	const connectNoteAction = document.getElementById("connect-note-action");
 	const deleteImageAction = document.getElementById("delete-image-action");
 	const deleteConnectionAction = document.getElementById("delete-connection-action");
@@ -145,10 +181,13 @@ export function initNotesCanvas(): void {
 		!(contextMenu instanceof HTMLElement) ||
 		!(createNoteAction instanceof HTMLButtonElement) ||
 		!(createGroupAction instanceof HTMLButtonElement) ||
+		!(createOrganizerAction instanceof HTMLButtonElement) ||
 		!(createImageAction instanceof HTMLButtonElement) ||
 		!(renameGroupAction instanceof HTMLButtonElement) ||
+		!(renameOrganizerAction instanceof HTMLButtonElement) ||
 		!(replaceGroupBgAction instanceof HTMLButtonElement) ||
 		!(deleteGroupAction instanceof HTMLButtonElement) ||
+		!(deleteOrganizerAction instanceof HTMLButtonElement) ||
 		!(connectNoteAction instanceof HTMLButtonElement) ||
 		!(deleteImageAction instanceof HTMLButtonElement) ||
 		!(deleteConnectionAction instanceof HTMLButtonElement) ||
@@ -172,10 +211,13 @@ export function initNotesCanvas(): void {
 		contextMenu,
 		createNoteAction,
 		createGroupAction,
+		createOrganizerAction,
 		createImageAction,
 		renameGroupAction,
+		renameOrganizerAction,
 		replaceGroupBgAction,
 		deleteGroupAction,
+		deleteOrganizerAction,
 		connectNoteAction,
 		deleteImageAction,
 		deleteConnectionAction,
@@ -226,10 +268,13 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "canvas", point };
 		dom.createNoteAction.hidden = false;
 		dom.createGroupAction.hidden = false;
+		dom.createOrganizerAction.hidden = false;
 		dom.createImageAction.hidden = false;
 		dom.renameGroupAction.hidden = true;
+		dom.renameOrganizerAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
+		dom.deleteOrganizerAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
@@ -240,10 +285,30 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "group", groupId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.createOrganizerAction.hidden = true;
 		dom.createImageAction.hidden = true;
 		dom.renameGroupAction.hidden = false;
+		dom.renameOrganizerAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = false;
 		dom.deleteGroupAction.hidden = false;
+		dom.deleteOrganizerAction.hidden = true;
+		dom.connectNoteAction.hidden = true;
+		dom.deleteImageAction.hidden = true;
+		dom.deleteConnectionAction.hidden = true;
+		dom.deleteNoteAction.hidden = true;
+	}
+
+	function showOrganizerMenu(organizerId: string): void {
+		contextMenuState = { type: "organizer", organizerId };
+		dom.createNoteAction.hidden = true;
+		dom.createGroupAction.hidden = true;
+		dom.createOrganizerAction.hidden = true;
+		dom.createImageAction.hidden = true;
+		dom.renameGroupAction.hidden = true;
+		dom.renameOrganizerAction.hidden = false;
+		dom.replaceGroupBgAction.hidden = true;
+		dom.deleteGroupAction.hidden = true;
+		dom.deleteOrganizerAction.hidden = false;
 		dom.connectNoteAction.hidden = true;
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
@@ -254,10 +319,13 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "note", noteId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.createOrganizerAction.hidden = true;
 		dom.createImageAction.hidden = true;
 		dom.renameGroupAction.hidden = true;
+		dom.renameOrganizerAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
+		dom.deleteOrganizerAction.hidden = true;
 		dom.connectNoteAction.hidden = false;
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = true;
@@ -268,10 +336,13 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "image", imageId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.createOrganizerAction.hidden = true;
 		dom.createImageAction.hidden = true;
 		dom.renameGroupAction.hidden = true;
+		dom.renameOrganizerAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
+		dom.deleteOrganizerAction.hidden = true;
 		dom.connectNoteAction.hidden = false;
 		dom.deleteImageAction.hidden = false;
 		dom.deleteConnectionAction.hidden = true;
@@ -282,10 +353,13 @@ export function initNotesCanvas(): void {
 		contextMenuState = { type: "connection", connectionId };
 		dom.createNoteAction.hidden = true;
 		dom.createGroupAction.hidden = true;
+		dom.createOrganizerAction.hidden = true;
 		dom.createImageAction.hidden = true;
 		dom.renameGroupAction.hidden = true;
+		dom.renameOrganizerAction.hidden = true;
 		dom.replaceGroupBgAction.hidden = true;
 		dom.deleteGroupAction.hidden = true;
+		dom.deleteOrganizerAction.hidden = true;
 		dom.connectNoteAction.hidden = true;
 		dom.deleteImageAction.hidden = true;
 		dom.deleteConnectionAction.hidden = false;
@@ -338,6 +412,13 @@ export function initNotesCanvas(): void {
 		);
 	}
 
+	function findOrganizerInCurrentBoard(organizerId: string): OrganizerItem | undefined {
+		const items = currentBoard().items;
+		return items.find(
+			(item): item is OrganizerItem => item.type === "organizer" && item.id === organizerId,
+		);
+	}
+
 	function findNoteInCurrentBoard(noteId: string): NoteItem | undefined {
 		const items = currentBoard().items;
 		return items.find((item): item is NoteItem => item.type === "note" && item.id === noteId);
@@ -385,6 +466,114 @@ export function initNotesCanvas(): void {
 	function findImageInCurrentBoard(imageId: string): ImageItem | undefined {
 		const items = currentBoard().items;
 		return items.find((item): item is ImageItem => item.type === "image" && item.id === imageId);
+	}
+
+	function isContainableItem(item: CanvasItem): item is ContainableItem {
+		return item.type === "note" || item.type === "group" || item.type === "image";
+	}
+
+	function getOrganizerBodyBounds(organizer: OrganizerItem): {
+		left: number;
+		top: number;
+		right: number;
+		bottom: number;
+	} {
+		return {
+			left: organizer.x + ORGANIZER_BODY_INSET,
+			top: organizer.y + ORGANIZER_HEADER_HEIGHT + ORGANIZER_BODY_INSET,
+			right: organizer.x + organizer.width - ORGANIZER_BODY_INSET,
+			bottom: organizer.y + organizer.height - ORGANIZER_BODY_INSET,
+		};
+	}
+
+	function isPointInsideBounds(
+		point: Point,
+		bounds: { left: number; top: number; right: number; bottom: number },
+	): boolean {
+		return (
+			point.x >= bounds.left &&
+			point.x <= bounds.right &&
+			point.y >= bounds.top &&
+			point.y <= bounds.bottom
+		);
+	}
+
+	function resolveOrganizerForDroppedItem(
+		item: ContainableItem,
+		itemElement: HTMLElement,
+	): OrganizerItem | null {
+		const center = getElementCenter(itemElement);
+		const organizers = currentBoard().items.filter(
+			(candidate): candidate is OrganizerItem => candidate.type === "organizer",
+		);
+
+		for (let index = organizers.length - 1; index >= 0; index -= 1) {
+			const organizer = organizers[index];
+			if (organizer.id === item.id) {
+				continue;
+			}
+			const bounds = getOrganizerBodyBounds(organizer);
+			if (isPointInsideBounds(center, bounds)) {
+				return organizer;
+			}
+		}
+
+		return null;
+	}
+
+	function clampInsideOrganizer(item: ContainableItem, itemElement: HTMLElement, organizer: OrganizerItem): void {
+		const bounds = getOrganizerBodyBounds(organizer);
+		const itemWidth = itemElement.offsetWidth || NOTE_WIDTH;
+		const itemHeight = itemElement.offsetHeight || NOTE_HEIGHT;
+		const maxX = Math.max(bounds.left, bounds.right - itemWidth);
+		const maxY = Math.max(bounds.top, bounds.bottom - itemHeight);
+		item.x = Math.min(Math.max(item.x, bounds.left), maxX);
+		item.y = Math.min(Math.max(item.y, bounds.top), maxY);
+		itemElement.style.left = `${item.x}px`;
+		itemElement.style.top = `${item.y}px`;
+	}
+
+	function layoutOrganizerItems(organizerId: string): void {
+		const organizer = findOrganizerInCurrentBoard(organizerId);
+		if (!organizer) {
+			return;
+		}
+
+		const bounds = getOrganizerBodyBounds(organizer);
+		let cursorX = bounds.left;
+		let cursorY = bounds.top;
+		let rowHeight = 0;
+
+		const containedItems = currentBoard().items.filter(
+			(candidate): candidate is ContainableItem =>
+				isContainableItem(candidate) && candidate.parentOrganizerId === organizerId,
+		);
+
+		for (const contained of containedItems) {
+			const element = itemElements.get(contained.id);
+			const fallbackSize = getItemFallbackSize(contained);
+			const itemWidth = element?.offsetWidth ?? fallbackSize.width;
+			const itemHeight = element?.offsetHeight ?? fallbackSize.height;
+
+			if (cursorX > bounds.left && cursorX + itemWidth > bounds.right) {
+				cursorX = bounds.left;
+				cursorY += rowHeight + ORGANIZER_GRID_SIZE;
+				rowHeight = 0;
+			}
+
+			const maxX = Math.max(bounds.left, bounds.right - itemWidth);
+			const maxY = Math.max(bounds.top, bounds.bottom - itemHeight);
+			contained.x = Math.min(cursorX, maxX);
+			contained.y = Math.min(cursorY, maxY);
+
+			if (element) {
+				element.style.left = `${contained.x}px`;
+				element.style.top = `${contained.y}px`;
+			}
+
+			cursorX = contained.x + itemWidth + ORGANIZER_GRID_SIZE;
+			rowHeight = Math.max(rowHeight, itemHeight);
+		}
 	}
 
 	function canConnectItem(item: CanvasItem): boolean {
@@ -551,10 +740,24 @@ export function initNotesCanvas(): void {
 		};
 	}
 
-	function getSnapTargetCenters(itemId: string): Point[] {
+	function getSnapTargetCenters(item: CanvasItem, excludedItemIds: Set<string>): Point[] {
 		const centers: Point[] = [];
+		const draggingOutsideOrganizer =
+			isContainableItem(item) && !item.parentOrganizerId;
 		for (const [otherItemId, element] of itemElements.entries()) {
-			if (otherItemId === itemId) {
+			if (otherItemId === item.id || excludedItemIds.has(otherItemId)) {
+				continue;
+			}
+
+			const otherItem = currentBoard().items.find((candidate) => candidate.id === otherItemId);
+			if (!otherItem) {
+				continue;
+			}
+			if (
+				draggingOutsideOrganizer &&
+				isContainableItem(otherItem) &&
+				Boolean(otherItem.parentOrganizerId)
+			) {
 				continue;
 			}
 			centers.push(getElementCenter(element));
@@ -568,8 +771,9 @@ export function initNotesCanvas(): void {
 		element: HTMLElement,
 		proposedDx: number,
 		proposedDy: number,
+		excludedItemIds: Set<string>,
 	): { dx: number; dy: number; snapX: number | null; snapY: number | null } {
-		const snapTargets = getSnapTargetCenters(item.id);
+		const snapTargets = getSnapTargetCenters(item, excludedItemIds);
 		if (snapTargets.length === 0) {
 			return { dx: proposedDx, dy: proposedDy, snapX: null, snapY: null };
 		}
@@ -803,6 +1007,24 @@ export function initNotesCanvas(): void {
 		return true;
 	}
 
+	function removeOrganizerById(organizerId: string): boolean {
+		const index = currentBoard().items.findIndex(
+			(item) => item.type === "organizer" && item.id === organizerId,
+		);
+		if (index === -1) {
+			return false;
+		}
+
+		currentBoard().items.splice(index, 1);
+		for (const item of currentBoard().items) {
+			if (isContainableItem(item) && item.parentOrganizerId === organizerId) {
+				delete item.parentOrganizerId;
+			}
+		}
+		selectedItemIds.delete(organizerId);
+		return true;
+	}
+
 	function renderConnections(): void {
 		const board = currentBoard();
 		dom.connectionsPermanent.replaceChildren();
@@ -910,8 +1132,32 @@ export function initNotesCanvas(): void {
 		}
 	}
 
+	function startOrganizerEditingById(organizerId: string): void {
+		for (const candidate of dom.canvas.querySelectorAll(".organizer-item")) {
+			if (!(candidate instanceof HTMLElement)) {
+				continue;
+			}
+			if (candidate.dataset.itemId !== organizerId) {
+				continue;
+			}
+
+			const input = candidate.querySelector(".organizer-header input");
+			if (!(input instanceof HTMLInputElement)) {
+				return;
+			}
+
+			candidate.classList.add("is-editing");
+			input.disabled = false;
+			input.focus();
+			input.select();
+			return;
+		}
+	}
+
 	function makeDraggable(element: HTMLElement, item: CanvasItem): void {
 		let draggedIds: string[] = [item.id];
+		let draggedOrganizerIds = new Set<string>();
+		let snapExcludedIds = new Set<string>();
 
 		interact(element).draggable({
 			ignoreFrom:
@@ -924,6 +1170,24 @@ export function initNotesCanvas(): void {
 						selectedItemIds.size > 1 && selectedItemIds.has(item.id)
 							? Array.from(selectedItemIds)
 							: [item.id];
+					draggedOrganizerIds = new Set(
+						draggedIds.filter((id) =>
+							currentBoard().items.some(
+								(candidate) => candidate.type === "organizer" && candidate.id === id,
+							),
+						),
+					);
+					snapExcludedIds = new Set(draggedIds);
+					for (const organizerId of draggedOrganizerIds) {
+						for (const candidate of currentBoard().items) {
+							if (
+								isContainableItem(candidate) &&
+								candidate.parentOrganizerId === organizerId
+							) {
+								snapExcludedIds.add(candidate.id);
+							}
+						}
+					}
 				},
 				move(event) {
 					if (!(event.target instanceof HTMLElement)) {
@@ -966,12 +1230,22 @@ export function initNotesCanvas(): void {
 
 					appliedDx = Math.max(minDx, Math.min(maxDx, appliedDx));
 					appliedDy = Math.max(minDy, Math.min(maxDy, appliedDy));
-					if (draggedItems.length === 1) {
+					const singleDraggedItem = draggedItems.length === 1 ? draggedItems[0].data : null;
+					const isOrganizerManagedItem =
+						singleDraggedItem &&
+						isContainableItem(singleDraggedItem) &&
+						Boolean(singleDraggedItem.parentOrganizerId);
+					if (
+						draggedItems.length === 1 &&
+						draggedItems[0].data.type !== "organizer" &&
+						!isOrganizerManagedItem
+					) {
 						const snapped = getSnappedDragDelta(
 							draggedItems[0].data,
 							draggedItems[0].element,
 							appliedDx,
 							appliedDy,
+							snapExcludedIds,
 						);
 						appliedDx = Math.max(minDx, Math.min(maxDx, snapped.dx));
 						appliedDy = Math.max(minDy, Math.min(maxDy, snapped.dy));
@@ -986,10 +1260,66 @@ export function initNotesCanvas(): void {
 						dragged.element.style.left = `${dragged.data.x}px`;
 						dragged.element.style.top = `${dragged.data.y}px`;
 					}
+					if (draggedOrganizerIds.size > 0) {
+						for (const candidate of currentBoard().items) {
+							if (!isContainableItem(candidate) || !candidate.parentOrganizerId) {
+								continue;
+							}
+							if (!draggedOrganizerIds.has(candidate.parentOrganizerId)) {
+								continue;
+							}
+							if (draggedIds.includes(candidate.id)) {
+								continue;
+							}
+							const childElement = itemElements.get(candidate.id);
+							if (!childElement) {
+								continue;
+							}
+							candidate.x += appliedDx;
+							candidate.y += appliedDy;
+							childElement.style.left = `${candidate.x}px`;
+							childElement.style.top = `${candidate.y}px`;
+						}
+					}
+					for (const dragged of draggedItems) {
+						if (!isContainableItem(dragged.data) || !dragged.data.parentOrganizerId) {
+							continue;
+						}
+						const organizer = findOrganizerInCurrentBoard(dragged.data.parentOrganizerId);
+						if (!organizer) {
+							continue;
+						}
+						clampInsideOrganizer(dragged.data, dragged.element, organizer);
+						layoutOrganizerItems(organizer.id);
+					}
 					renderConnections();
 					refreshConnectionPreview();
 				},
 				end() {
+					const affectedOrganizerIds = new Set<string>();
+					for (const movedId of draggedIds) {
+						const movedItem = currentBoard().items.find((candidate) => candidate.id === movedId);
+						const movedElement = itemElements.get(movedId);
+						if (!movedItem || !movedElement || !isContainableItem(movedItem)) {
+							continue;
+						}
+
+						if (movedItem.parentOrganizerId) {
+							affectedOrganizerIds.add(movedItem.parentOrganizerId);
+						}
+						const organizer = resolveOrganizerForDroppedItem(movedItem, movedElement);
+						if (organizer) {
+							movedItem.parentOrganizerId = organizer.id;
+							affectedOrganizerIds.add(organizer.id);
+						} else if (movedItem.parentOrganizerId) {
+							delete movedItem.parentOrganizerId;
+						}
+					}
+					for (const organizerId of affectedOrganizerIds) {
+						layoutOrganizerItems(organizerId);
+					}
+					renderConnections();
+					refreshConnectionPreview();
 					hideSnapGuides();
 				},
 			},
@@ -1234,6 +1564,67 @@ export function initNotesCanvas(): void {
 					input.select();
 				});
 			}
+		} else if (item.type === "organizer") {
+			const organizerItem = document.createElement("div");
+			organizerItem.className = "organizer-item item";
+			organizerItem.style.width = `${item.width}px`;
+			organizerItem.style.height = `${item.height}px`;
+
+			const header = document.createElement("div");
+			header.className = "organizer-header";
+			const titleInput = document.createElement("input");
+			titleInput.type = "text";
+			titleInput.value = item.title;
+			titleInput.disabled = true;
+			titleInput.setAttribute("aria-label", `Organizer title ${item.title}`);
+			titleInput.addEventListener("input", () => {
+				item.title = titleInput.value || "Untitled organizer";
+			});
+			titleInput.addEventListener("blur", () => {
+				if (!titleInput.value.trim()) {
+					titleInput.value = "Untitled organizer";
+				}
+				item.title = titleInput.value;
+				exitInlineEditMode(organizerItem, titleInput);
+			});
+			titleInput.addEventListener("keydown", (event) => {
+				if (event.key === "Enter" || event.key === "Escape") {
+					titleInput.blur();
+				}
+			});
+			header.appendChild(titleInput);
+
+			const body = document.createElement("div");
+			body.className = "organizer-body";
+
+			organizerItem.addEventListener("dblclick", (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				if (organizerItem.classList.contains("is-editing")) {
+					return;
+				}
+				const pointerY = event.clientY - organizerItem.getBoundingClientRect().top;
+				if (pointerY > ORGANIZER_HEADER_HEIGHT) {
+					return;
+				}
+				organizerItem.classList.add("is-editing");
+				titleInput.disabled = false;
+				titleInput.focus();
+				titleInput.select();
+			});
+
+			organizerItem.appendChild(header);
+			organizerItem.appendChild(body);
+			element = organizerItem;
+
+			if (focusInput) {
+				queueMicrotask(() => {
+					organizerItem.classList.add("is-editing");
+					titleInput.disabled = false;
+					titleInput.focus();
+					titleInput.select();
+				});
+			}
 		} else {
 			const imageItem = document.createElement("div");
 			imageItem.className = "image-item item";
@@ -1286,8 +1677,16 @@ export function initNotesCanvas(): void {
 		for (const element of dom.canvas.querySelectorAll(".item")) {
 			element.remove();
 		}
-		for (const item of currentBoard().items) {
+		for (const item of currentBoard().items.filter((candidate) => candidate.type === "organizer")) {
 			renderItem(item);
+		}
+		for (const item of currentBoard().items.filter((candidate) => candidate.type !== "organizer")) {
+			renderItem(item);
+		}
+		for (const organizer of currentBoard().items.filter(
+			(candidate): candidate is OrganizerItem => candidate.type === "organizer",
+		)) {
+			layoutOrganizerItems(organizer.id);
 		}
 		renderConnections();
 		refreshConnectionPreview();
@@ -1333,6 +1732,30 @@ export function initNotesCanvas(): void {
 		};
 		current.items.push(group);
 		renderItem(group, true);
+	}
+
+	function createOrganizerAt(positionX: number, positionY: number): void {
+		const clamped = clampToCanvas(
+			dom.canvas,
+			positionX,
+			positionY,
+			ORGANIZER_WIDTH,
+			ORGANIZER_HEIGHT,
+		);
+		const current = currentBoard();
+		const organizerCount =
+			current.items.filter((item) => item.type === "organizer").length + 1;
+		const organizer: OrganizerItem = {
+			id: createId(),
+			type: "organizer",
+			x: clamped.x,
+			y: clamped.y,
+			title: `Organizer ${organizerCount}`,
+			width: ORGANIZER_WIDTH,
+			height: ORGANIZER_HEIGHT,
+		};
+		current.items.push(organizer);
+		renderItem(organizer, true);
 	}
 
 	function pickImageFile(): Promise<File | null> {
@@ -1439,6 +1862,7 @@ export function initNotesCanvas(): void {
 		const relative = getRelativePoint(dom.canvas, event.clientX, event.clientY);
 		const noteTarget = target?.closest(".note");
 		const groupTarget = target?.closest(".group-item");
+		const organizerTarget = target?.closest(".organizer-item");
 		const imageTarget = target?.closest(".image-item");
 		const connectionTarget = target?.closest("[data-connection-id]");
 
@@ -1476,6 +1900,18 @@ export function initNotesCanvas(): void {
 				return;
 			}
 			showGroupMenu(groupId);
+		} else if (organizerTarget instanceof HTMLElement) {
+			if (organizerTarget.classList.contains("is-editing")) {
+				closeContextMenu();
+				return;
+			}
+
+			const organizerId = organizerTarget.dataset.itemId;
+			if (!organizerId || !findOrganizerInCurrentBoard(organizerId)) {
+				closeContextMenu();
+				return;
+			}
+			showOrganizerMenu(organizerId);
 		} else if (imageTarget instanceof HTMLElement) {
 			const imageId = imageTarget.dataset.itemId;
 			if (!imageId || !findImageInCurrentBoard(imageId)) {
@@ -1525,6 +1961,7 @@ export function initNotesCanvas(): void {
 
 			const noteTarget = target?.closest(".note");
 			const groupTarget = target?.closest(".group-item");
+			const organizerTarget = target?.closest(".organizer-item");
 			const imageTarget = target?.closest(".image-item");
 			if (noteTarget instanceof HTMLElement && !noteTarget.classList.contains("is-editing")) {
 				const noteId = noteTarget.dataset.itemId;
@@ -1537,6 +1974,16 @@ export function initNotesCanvas(): void {
 				const groupId = groupTarget.dataset.itemId;
 				if (groupId && findGroupInCurrentBoard(groupId)) {
 					setSingleSelectedItem(groupId);
+					return;
+				}
+			}
+			if (
+				organizerTarget instanceof HTMLElement &&
+				!organizerTarget.classList.contains("is-editing")
+			) {
+				const organizerId = organizerTarget.dataset.itemId;
+				if (organizerId && findOrganizerInCurrentBoard(organizerId)) {
+					setSingleSelectedItem(organizerId);
 					return;
 				}
 			}
@@ -1664,6 +2111,14 @@ export function initNotesCanvas(): void {
 		closeContextMenu();
 	});
 
+	dom.createOrganizerAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "canvas") {
+			return;
+		}
+		createOrganizerAt(contextMenuState.point.x, contextMenuState.point.y);
+		closeContextMenu();
+	});
+
 	dom.createImageAction.addEventListener("click", () => {
 		if (!contextMenuState || contextMenuState.type !== "canvas") {
 			return;
@@ -1678,6 +2133,14 @@ export function initNotesCanvas(): void {
 			return;
 		}
 		startGroupEditingById(contextMenuState.groupId);
+		closeContextMenu();
+	});
+
+	dom.renameOrganizerAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "organizer") {
+			return;
+		}
+		startOrganizerEditingById(contextMenuState.organizerId);
 		closeContextMenu();
 	});
 
@@ -1748,6 +2211,19 @@ export function initNotesCanvas(): void {
 		}
 
 		if (!removeGroupById(contextMenuState.groupId)) {
+			closeContextMenu();
+			return;
+		}
+		renderBoard();
+		closeContextMenu();
+	});
+
+	dom.deleteOrganizerAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "organizer") {
+			return;
+		}
+
+		if (!removeOrganizerById(contextMenuState.organizerId)) {
 			closeContextMenu();
 			return;
 		}
@@ -1868,12 +2344,14 @@ export function initNotesCanvas(): void {
 
 		if (event.key === "Delete") {
 			const target = event.target;
+			const targetIsActiveEditableControl =
+				target instanceof HTMLElement &&
+				((target.tagName === "INPUT" && !(target as HTMLInputElement).disabled) ||
+					(target.tagName === "TEXTAREA" && !(target as HTMLTextAreaElement).disabled) ||
+					target.isContentEditable);
 			if (
 				activeRichEditor ||
-				(target instanceof HTMLElement &&
-					(target.tagName === "INPUT" ||
-						target.tagName === "TEXTAREA" ||
-						target.isContentEditable))
+				targetIsActiveEditableControl
 			) {
 				return;
 			}
@@ -1894,7 +2372,9 @@ export function initNotesCanvas(): void {
 						? removeNoteById(id)
 						: item.type === "group"
 							? removeGroupById(id)
-							: removeImageById(id);
+							: item.type === "image"
+								? removeImageById(id)
+								: removeOrganizerById(id);
 				removedAny = removedAny || removed;
 			}
 			if (removedAny) {

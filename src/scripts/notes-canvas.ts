@@ -40,9 +40,13 @@ interface DomRefs {
 	contextMenu: HTMLElement;
 	createNoteAction: HTMLButtonElement;
 	createGroupAction: HTMLButtonElement;
-	backButton: HTMLButtonElement;
-	boardLabel: HTMLElement;
+	deleteGroupAction: HTMLButtonElement;
+	boardBreadcrumbs: HTMLElement;
 }
+
+type ContextMenuState =
+	| { type: "canvas"; point: Point }
+	| { type: "group"; groupId: string };
 
 function createId(): string {
 	if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -82,16 +86,16 @@ export function initNotesCanvas(): void {
 	const contextMenu = document.getElementById("context-menu");
 	const createNoteAction = document.getElementById("create-note-action");
 	const createGroupAction = document.getElementById("create-group-action");
-	const backButton = document.getElementById("back-button");
-	const boardLabel = document.getElementById("board-label");
+	const deleteGroupAction = document.getElementById("delete-group-action");
+	const boardBreadcrumbs = document.getElementById("board-breadcrumbs");
 
 	if (
 		!(canvas instanceof HTMLElement) ||
 		!(contextMenu instanceof HTMLElement) ||
 		!(createNoteAction instanceof HTMLButtonElement) ||
 		!(createGroupAction instanceof HTMLButtonElement) ||
-		!(backButton instanceof HTMLButtonElement) ||
-		!(boardLabel instanceof HTMLElement)
+		!(deleteGroupAction instanceof HTMLButtonElement) ||
+		!(boardBreadcrumbs instanceof HTMLElement)
 	) {
 		return;
 	}
@@ -106,11 +110,11 @@ export function initNotesCanvas(): void {
 		contextMenu,
 		createNoteAction,
 		createGroupAction,
-		backButton,
-		boardLabel,
+		deleteGroupAction,
+		boardBreadcrumbs,
 	};
 
-	let contextPoint: Point | null = null;
+	let contextMenuState: ContextMenuState | null = null;
 	const rootBoard = createBoard("Home");
 	const boardStack: Board[] = [rootBoard];
 
@@ -120,15 +124,67 @@ export function initNotesCanvas(): void {
 
 	function closeContextMenu(): void {
 		dom.contextMenu.hidden = true;
+		contextMenuState = null;
+	}
+
+	function showCanvasMenu(point: Point): void {
+		contextMenuState = { type: "canvas", point };
+		dom.createNoteAction.hidden = false;
+		dom.createGroupAction.hidden = false;
+		dom.deleteGroupAction.hidden = true;
+	}
+
+	function showGroupMenu(groupId: string): void {
+		contextMenuState = { type: "group", groupId };
+		dom.createNoteAction.hidden = true;
+		dom.createGroupAction.hidden = true;
+		dom.deleteGroupAction.hidden = false;
 	}
 
 	function refreshBoardHeader(): void {
-		dom.boardLabel.textContent = boardStack.map((board) => board.title).join(" / ");
-		dom.backButton.hidden = boardStack.length === 1;
+		dom.boardBreadcrumbs.replaceChildren();
+
+		for (let index = 0; index < boardStack.length; index += 1) {
+			const board = boardStack[index];
+			const isCurrent = index === boardStack.length - 1;
+
+			if (index > 0) {
+				const separator = document.createElement("span");
+				separator.className = "breadcrumbs-separator";
+				separator.textContent = "/";
+				dom.boardBreadcrumbs.appendChild(separator);
+			}
+
+			if (isCurrent) {
+				const currentLabel = document.createElement("span");
+				currentLabel.className = "breadcrumbs-current";
+				currentLabel.textContent = board.title;
+				dom.boardBreadcrumbs.appendChild(currentLabel);
+				continue;
+			}
+
+			const link = document.createElement("button");
+			link.type = "button";
+			link.className = "breadcrumbs-link";
+			link.textContent = board.title;
+			link.setAttribute("aria-label", `Go to ${board.title}`);
+			link.addEventListener("click", () => {
+				boardStack.splice(index + 1);
+				renderBoard();
+			});
+			dom.boardBreadcrumbs.appendChild(link);
+		}
 	}
 
 	function canOpenCanvasMenu(eventTarget: EventTarget | null): boolean {
 		return !(eventTarget instanceof HTMLElement && eventTarget.closest(".item"));
+	}
+
+	function findGroupInCurrentBoard(groupId: string): GroupItem | undefined {
+		const items = currentBoard().items;
+		return items.find(
+			(item): item is GroupItem => item.type === "group" && item.id === groupId,
+		);
 	}
 
 	function makeDraggable(element: HTMLElement, item: CanvasItem): void {
@@ -198,6 +254,8 @@ export function initNotesCanvas(): void {
 			element = groupButton;
 		}
 
+		element.dataset.itemId = item.id;
+		element.dataset.itemType = item.type;
 		element.style.left = `${item.x}px`;
 		element.style.top = `${item.y}px`;
 		dom.canvas.appendChild(element);
@@ -256,48 +314,75 @@ export function initNotesCanvas(): void {
 
 	dom.canvas.addEventListener("contextmenu", (event) => {
 		event.preventDefault();
+		const target = event.target instanceof HTMLElement ? event.target : null;
 
-		if (!canOpenCanvasMenu(event.target)) {
+		if (target && target.closest(".note")) {
 			closeContextMenu();
 			return;
 		}
 
 		const relative = getRelativePoint(dom.canvas, event.clientX, event.clientY);
+		const groupTarget = target?.closest(".group-item");
+
+		if (groupTarget instanceof HTMLElement) {
+			const groupId = groupTarget.dataset.itemId;
+			if (!groupId || !findGroupInCurrentBoard(groupId)) {
+				closeContextMenu();
+				return;
+			}
+			showGroupMenu(groupId);
+		} else if (canOpenCanvasMenu(event.target)) {
+			showCanvasMenu(relative);
+		} else {
+			closeContextMenu();
+			return;
+		}
+
 		const clampedMenu = clampToCanvas(
 			dom.canvas,
 			relative.x,
 			relative.y,
 			CONTEXT_MENU_WIDTH,
-			CONTEXT_MENU_HEIGHT,
+			dom.deleteGroupAction.hidden ? CONTEXT_MENU_HEIGHT : 52,
 		);
-		contextPoint = relative;
 		dom.contextMenu.style.left = `${clampedMenu.x}px`;
 		dom.contextMenu.style.top = `${clampedMenu.y}px`;
 		dom.contextMenu.hidden = false;
 	});
 
 	dom.createNoteAction.addEventListener("click", () => {
-		if (!contextPoint) {
+		if (!contextMenuState || contextMenuState.type !== "canvas") {
 			return;
 		}
-		createNoteAt(contextPoint.x, contextPoint.y);
+		createNoteAt(contextMenuState.point.x, contextMenuState.point.y);
 		closeContextMenu();
 	});
 
 	dom.createGroupAction.addEventListener("click", () => {
-		if (!contextPoint) {
+		if (!contextMenuState || contextMenuState.type !== "canvas") {
 			return;
 		}
-		createGroupAt(contextPoint.x, contextPoint.y);
+		createGroupAt(contextMenuState.point.x, contextMenuState.point.y);
 		closeContextMenu();
 	});
 
-	dom.backButton.addEventListener("click", () => {
-		if (boardStack.length <= 1) {
+	dom.deleteGroupAction.addEventListener("click", () => {
+		if (!contextMenuState || contextMenuState.type !== "group") {
 			return;
 		}
-		boardStack.pop();
+
+		const index = currentBoard().items.findIndex(
+			(item) => item.type === "group" && item.id === contextMenuState.groupId,
+		);
+
+		if (index === -1) {
+			closeContextMenu();
+			return;
+		}
+
+		currentBoard().items.splice(index, 1);
 		renderBoard();
+		closeContextMenu();
 	});
 
 	document.addEventListener("pointerdown", (event) => {

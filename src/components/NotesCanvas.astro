@@ -4,12 +4,12 @@ import "../styles/notes-canvas.css";
 
 <main class="canvas" id="canvas" aria-label="Notes canvas">
 	<div class="toolbar">
-		<button class="back-button" id="back-button" type="button" hidden>Back</button>
-		<p class="board-label" id="board-label">Home</p>
+		<nav class="breadcrumbs" id="board-breadcrumbs" aria-label="Board hierarchy"></nav>
 	</div>
 	<div class="context-menu" id="context-menu" hidden>
 		<button type="button" id="create-note-action">Create note</button>
 		<button type="button" id="create-group-action">Create note group</button>
+		<button type="button" id="delete-group-action" hidden>Delete group</button>
 	</div>
 </main>
 

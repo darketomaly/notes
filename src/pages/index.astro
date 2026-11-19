@@ -30,6 +30,7 @@
 			.canvas {
 				position: relative;
 				height: 100%;
+				min-height: 100vh;
 				width: 100%;
 				overflow: hidden;
 				background:
@@ -52,7 +53,7 @@
 				pointer-events: none;
 			}
 
-			.note {
+			:global(.note) {
 				position: absolute;
 				width: 240px;
 				padding: 0.55rem 0.65rem;
@@ -60,9 +61,11 @@
 				border-radius: 0.65rem;
 				background: #222;
 				box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+				cursor: grab;
+				touch-action: none;
 			}
 
-			.note input {
+			:global(.note input) {
 				width: 100%;
 				border: 0;
 				outline: 0;
@@ -70,10 +73,15 @@
 				font: inherit;
 				background: transparent;
 				color: #f5f5f5;
+				cursor: text;
 			}
 
-			.note input::placeholder {
+			:global(.note input::placeholder) {
 				color: #8b8b8b;
+			}
+
+			:global(.note:active) {
+				cursor: grabbing;
 			}
 		</style>
 	</head>
@@ -81,10 +89,31 @@
 		<main class="canvas" id="canvas" aria-label="Notes canvas">
 			<p class="hint">Double-click anywhere to create a note</p>
 		</main>
-		<script>
+		<script type="module">
+			import interact from "interactjs";
+
 			const NOTE_WIDTH = 240;
 			const EDGE_PADDING = 12;
 			const canvas = document.getElementById("canvas");
+
+			interact(".note").draggable({
+				ignoreFrom: "input",
+				listeners: {
+					move(event) {
+						const target = event.target;
+						if (!(target instanceof HTMLElement)) {
+							return;
+						}
+
+						const x = (Number(target.dataset.x) || 0) + event.dx;
+						const y = (Number(target.dataset.y) || 0) + event.dy;
+
+						target.style.transform = `translate(${x}px, ${y}px)`;
+						target.dataset.x = String(x);
+						target.dataset.y = String(y);
+					},
+				},
+			});
 
 			if (canvas) {
 				canvas.addEventListener("dblclick", (event) => {
@@ -94,12 +123,20 @@
 					}
 
 					const bounds = canvas.getBoundingClientRect();
-					const maxLeft = bounds.width - NOTE_WIDTH - EDGE_PADDING;
-					const left = Math.min(
-						Math.max(event.clientX - bounds.left, EDGE_PADDING),
-						maxLeft,
+					const relativeX =
+						typeof event.offsetX === "number" ? event.offsetX : event.clientX - bounds.left;
+					const relativeY =
+						typeof event.offsetY === "number" ? event.offsetY : event.clientY - bounds.top;
+					const maxLeft = Math.max(
+						EDGE_PADDING,
+						bounds.width - NOTE_WIDTH - EDGE_PADDING,
 					);
-					const top = Math.max(event.clientY - bounds.top, EDGE_PADDING);
+					const left = Math.min(Math.max(relativeX, EDGE_PADDING), maxLeft);
+					const top = Math.max(relativeY, EDGE_PADDING);
+
+					if (!Number.isFinite(left) || !Number.isFinite(top)) {
+						return;
+					}
 
 					const note = document.createElement("div");
 					note.className = "note";

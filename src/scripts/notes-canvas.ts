@@ -750,6 +750,11 @@ export function initNotesCanvas(): void {
 	}
 
 	dom.canvas.addEventListener("dblclick", (event) => {
+		const target = event.target instanceof HTMLElement ? event.target : null;
+		if (target && (target.closest("#text-toolbar") || target.closest("#context-menu"))) {
+			return;
+		}
+
 		if (!canOpenCanvasMenu(event.target)) {
 			return;
 		}

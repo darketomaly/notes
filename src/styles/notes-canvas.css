@@ -384,18 +384,26 @@ body {
 	padding: 0 0.55rem;
 	font: inherit;
 	font-size: 1rem;
-	color: #f1f1f1;
+	color: #cfd3db;
 	background: transparent;
 	cursor: pointer;
 	transition:
+		color 140ms ease,
 		background-color 140ms ease,
 		box-shadow 140ms ease;
 }
 
-.text-toolbar button:hover,
-.text-toolbar button.is-active {
+.text-toolbar button:hover {
 	background: #333;
 	box-shadow: inset 0 0 0 1px var(--glow-soft), 0 0 14px var(--glow-strong);
+}
+
+.text-toolbar button.is-active {
+	color: #ffffff;
+	background: rgba(var(--glow-rgb), 0.24);
+	box-shadow:
+		inset 0 0 0 1px rgba(var(--glow-rgb), 0.6),
+		0 0 14px rgba(var(--glow-rgb), 0.32);
 }
 
 @keyframes toolbar-pop-fade {

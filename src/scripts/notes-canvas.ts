@@ -41,6 +41,7 @@ interface GroupItem extends BaseItem {
 	title: string;
 	board: Board;
 	backgroundImageUrl?: string;
+	width?: number;
 }
 
 interface ImageItem extends BaseItem {
@@ -340,6 +341,45 @@ export function initNotesCanvas(): void {
 	function findNoteInCurrentBoard(noteId: string): NoteItem | undefined {
 		const items = currentBoard().items;
 		return items.find((item): item is NoteItem => item.type === "note" && item.id === noteId);
+	}
+
+	function growGroupWidthToFitTitle(
+		groupItem: HTMLElement,
+		input: HTMLInputElement,
+		group: GroupItem,
+	): void {
+		const measuredText = (input.value || "Untitled group").trim() || "Untitled group";
+		const canvas = document.createElement("canvas");
+		const context = canvas.getContext("2d");
+		if (!context) {
+			return;
+		}
+
+		const inputStyles = window.getComputedStyle(input);
+		context.font = `${inputStyles.fontStyle} ${inputStyles.fontVariant} ${inputStyles.fontWeight} ${inputStyles.fontSize} ${inputStyles.fontFamily}`;
+		let textWidth = context.measureText(measuredText).width;
+		const letterSpacing = parseFloat(inputStyles.letterSpacing);
+		if (!Number.isNaN(letterSpacing)) {
+			textWidth += Math.max(0, measuredText.length - 1) * letterSpacing;
+		}
+
+		const styles = window.getComputedStyle(groupItem);
+		const horizontalPadding =
+			parseFloat(styles.paddingLeft) +
+			parseFloat(styles.paddingRight) +
+			parseFloat(styles.borderLeftWidth) +
+			parseFloat(styles.borderRightWidth);
+		const editMinWidthRaw = groupItem.dataset.editMinWidth;
+		const editMinWidth = editMinWidthRaw ? Number.parseFloat(editMinWidthRaw) : Number.NaN;
+		const minimumWidth =
+			groupItem.classList.contains("is-editing") && !Number.isNaN(editMinWidth)
+				? editMinWidth
+				: (group.width ?? GROUP_WIDTH);
+		const requiredWidth = Math.max(minimumWidth, Math.ceil(textWidth + horizontalPadding + 2));
+		if (!group.width || requiredWidth !== group.width) {
+			group.width = requiredWidth;
+			groupItem.style.width = `${group.width}px`;
+		}
 	}
 
 	function findImageInCurrentBoard(imageId: string): ImageItem | undefined {
@@ -862,6 +902,7 @@ export function initNotesCanvas(): void {
 			}
 
 			candidate.classList.add("is-editing");
+			candidate.dataset.editMinWidth = String(candidate.offsetWidth || GROUP_WIDTH);
 			input.disabled = false;
 			input.focus();
 			input.select();
@@ -1138,6 +1179,10 @@ export function initNotesCanvas(): void {
 		} else if (item.type === "group") {
 			const groupItem = document.createElement("div");
 			groupItem.className = "group-item item";
+			if (!item.width) {
+				item.width = GROUP_WIDTH;
+			}
+			groupItem.style.width = `${item.width}px`;
 			if (item.backgroundImageUrl) {
 				groupItem.style.setProperty("--group-item-bg-image", `url("${item.backgroundImageUrl}")`);
 			}
@@ -1149,6 +1194,7 @@ export function initNotesCanvas(): void {
 			input.addEventListener("input", () => {
 				item.title = input.value || "Untitled group";
 				item.board.title = item.title;
+				growGroupWidthToFitTitle(groupItem, input, item);
 				refreshBoardHeader();
 			});
 			input.addEventListener("blur", () => {
@@ -1157,7 +1203,9 @@ export function initNotesCanvas(): void {
 				}
 				item.title = input.value;
 				item.board.title = item.title;
+				growGroupWidthToFitTitle(groupItem, input, item);
 				exitInlineEditMode(groupItem, input);
+				delete groupItem.dataset.editMinWidth;
 				refreshBoardHeader();
 			});
 			input.addEventListener("keydown", (event) => {
@@ -1180,6 +1228,7 @@ export function initNotesCanvas(): void {
 			if (focusInput) {
 				queueMicrotask(() => {
 					groupItem.classList.add("is-editing");
+					groupItem.dataset.editMinWidth = String(groupItem.offsetWidth || GROUP_WIDTH);
 					input.disabled = false;
 					input.focus();
 					input.select();
@@ -1280,6 +1329,7 @@ export function initNotesCanvas(): void {
 			y: clamped.y,
 			title: `Group ${groupCount}`,
 			board: createBoard(`Group ${groupCount}`),
+			width: GROUP_WIDTH,
 		};
 		current.items.push(group);
 		renderItem(group, true);

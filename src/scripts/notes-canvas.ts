@@ -353,6 +353,7 @@ export function initNotesCanvas(): void {
 			input.setAttribute("aria-label", `Group title ${item.title}`);
 			input.addEventListener("input", () => {
 				item.title = input.value || "Untitled group";
+				item.board.title = item.title;
 				refreshBoardHeader();
 			});
 			input.addEventListener("blur", () => {
@@ -360,6 +361,7 @@ export function initNotesCanvas(): void {
 					input.value = "Untitled group";
 				}
 				item.title = input.value;
+				item.board.title = item.title;
 				exitInlineEditMode(groupItem, input);
 				refreshBoardHeader();
 			});

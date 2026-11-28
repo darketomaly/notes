@@ -6,7 +6,7 @@ import {
 	type Board,
 	ORGANIZER_BODY_INSET,
 	ORGANIZER_GRID_SIZE,
-} from "./notes-canvas-model";
+} from "./model";
 
 export function isContainableItem(item: CanvasItem): item is ContainableItem {
 	return item.type === "note" || item.type === "group" || item.type === "image";

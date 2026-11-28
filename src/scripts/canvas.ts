@@ -27,13 +27,31 @@ import {
 	type NoteItem,
 	type OrganizerItem,
 	type Point,
-} from "./notes-canvas-model";
+} from "./canvas/model";
 import {
 	getOrganizerBodyBounds as getOrganizerBodyBoundsImpl,
 	isContainableItem,
 	layoutOrganizerItems as layoutOrganizerItemsImpl,
 	resolveOrganizerForPoint as resolveOrganizerForPointImpl,
-} from "./notes-canvas-organizer";
+} from "./canvas/organizer";
+import {
+	getClosestEdgeAnchor,
+	getElementCenter,
+	renderConnectionsLayer,
+} from "./canvas/connections";
+import {
+	createNoteItemElement,
+	type NoteItemRenderDeps,
+} from "./canvas/items/note";
+import {
+	createGroupItemElement,
+	type GroupItemRenderDeps,
+} from "./canvas/items/group";
+import {
+	createOrganizerItemElement,
+	type OrganizerItemRenderDeps,
+} from "./canvas/items/organizer";
+import { createImageItemElement } from "./canvas/items/image";
 
 interface ConnectionDraft {
 	fixedItemId: string;
@@ -72,7 +90,7 @@ type ContextMenuState =
 	| { type: "image"; imageId: string }
 	| { type: "connection"; connectionId: string };
 
-export function initNotesCanvas(): void {
+export function initCanvas(): void {
 	const canvas = document.getElementById("canvas");
 	const contextMenu = document.getElementById("context-menu");
 	const createNoteAction = document.getElementById("create-note-action");
@@ -662,13 +680,6 @@ export function initNotesCanvas(): void {
 		}
 	}
 
-	function getElementCenter(element: HTMLElement): Point {
-		return {
-			x: element.offsetLeft + element.offsetWidth / 2,
-			y: element.offsetTop + element.offsetHeight / 2,
-		};
-	}
-
 	function getSnapTargetCenters(item: CanvasItem, excludedItemIds: Set<string>): Point[] {
 		const centers: Point[] = [];
 		const draggingOutsideOrganizer =
@@ -743,24 +754,6 @@ export function initNotesCanvas(): void {
 			dy: proposedDy + (bestSnapDy ?? 0),
 			snapX,
 			snapY,
-		};
-	}
-
-	function getClosestEdgeAnchor(element: HTMLElement, targetPoint: Point): Point {
-		const center = getElementCenter(element);
-		const dx = targetPoint.x - center.x;
-		const dy = targetPoint.y - center.y;
-
-		if (Math.abs(dx) >= Math.abs(dy)) {
-			return {
-				x: dx >= 0 ? element.offsetLeft + element.offsetWidth : element.offsetLeft,
-				y: center.y,
-			};
-		}
-
-		return {
-			x: center.x,
-			y: dy >= 0 ? element.offsetTop + element.offsetHeight : element.offsetTop,
 		};
 	}
 
@@ -1164,43 +1157,13 @@ export function initNotesCanvas(): void {
 
 	function renderConnections(): void {
 		const board = currentBoard();
-		dom.connectionsPermanent.replaceChildren();
-
-		board.connections = board.connections.filter(
-			(connection) =>
-				itemElements.has(connection.fromItemId) && itemElements.has(connection.toItemId),
-		);
-
-		for (const connection of board.connections) {
-			const fromElement = itemElements.get(connection.fromItemId);
-			const toElement = itemElements.get(connection.toItemId);
-			if (!fromElement || !toElement) {
-				continue;
-			}
-
-			const fromCenter = getElementCenter(fromElement);
-			const toCenter = getElementCenter(toElement);
-			const from = getClosestEdgeAnchor(fromElement, toCenter);
-			const to = getClosestEdgeAnchor(toElement, fromCenter);
-			const hitLine = document.createElementNS(SVG_NS, "line");
-			hitLine.setAttribute("x1", String(from.x));
-			hitLine.setAttribute("y1", String(from.y));
-			hitLine.setAttribute("x2", String(to.x));
-			hitLine.setAttribute("y2", String(to.y));
-			hitLine.classList.add("connection-hit-area");
-			hitLine.dataset.connectionId = connection.id;
-
-			const line = document.createElementNS(SVG_NS, "line");
-			line.setAttribute("x1", String(from.x));
-			line.setAttribute("y1", String(from.y));
-			line.setAttribute("x2", String(to.x));
-			line.setAttribute("y2", String(to.y));
-			line.classList.add("connection-line");
-			line.dataset.connectionId = connection.id;
-			line.setAttribute("marker-end", "url(#connection-arrowhead)");
-			dom.connectionsPermanent.appendChild(hitLine);
-			dom.connectionsPermanent.appendChild(line);
-		}
+		board.connections = renderConnectionsLayer({
+			connections: board.connections,
+			itemElements,
+			connectionsPermanent: dom.connectionsPermanent,
+			svgNs: SVG_NS,
+			markerEnd: "url(#connection-arrowhead)",
+		});
 	}
 
 	function refreshConnectionPreview(): void {
@@ -1566,244 +1529,47 @@ export function initNotesCanvas(): void {
 		});
 	}
 
+	const noteItemRenderDeps: NoteItemRenderDeps = {
+		normalizeRichEditorContent,
+		reflowContainingOrganizer,
+		renderConnections,
+		refreshConnectionPreview,
+		positionTextToolbar,
+		refreshBoldButtonState,
+		showTextToolbarFor,
+		placeCaretNearPoint,
+		syncEditorTypingBold,
+		clearBrowserSelection,
+		hideTextToolbar,
+	};
+
+	const groupItemRenderDeps: GroupItemRenderDeps = {
+		growGroupWidthToFitTitle,
+		reflowContainingOrganizer,
+		refreshBoardHeader,
+		exitInlineEditMode,
+		openBoard: (group) => {
+			boardStack.push(group.board);
+			renderBoard();
+		},
+	};
+
+	const organizerItemRenderDeps: OrganizerItemRenderDeps = {
+		exitInlineEditMode,
+		headerHeight: ORGANIZER_HEADER_HEIGHT,
+	};
+
 	function renderItem(item: CanvasItem, focusInput = false): void {
 		let element: HTMLElement;
 
 		if (item.type === "note") {
-			const note = document.createElement("div");
-			note.className = "note item";
-			note.style.width = `${item.width ?? NOTE_WIDTH}px`;
-			if (item.minHeight && item.minHeight > 46) {
-				note.style.minHeight = `${item.minHeight}px`;
-			}
-			if (item.height != null) {
-				note.style.height = `${item.height}px`;
-				note.classList.add("is-height-locked");
-			}
-			const editor = document.createElement("div");
-			editor.className = "note-editor";
-			editor.setAttribute("aria-label", "Note content");
-			editor.setAttribute("data-placeholder", "Write a note…");
-			editor.contentEditable = "false";
-			editor.innerHTML = item.htmlContent;
-			editor.addEventListener("input", () => {
-				normalizeRichEditorContent(editor);
-				item.htmlContent = editor.innerHTML;
-				reflowContainingOrganizer(item);
-				renderConnections();
-				refreshConnectionPreview();
-				positionTextToolbar(editor);
-				refreshBoldButtonState();
-			});
-			note.addEventListener("dblclick", (event) => {
-				if (note.classList.contains("is-editing")) {
-					return;
-				}
-
-				event.preventDefault();
-				event.stopPropagation();
-				note.classList.add("is-editing");
-				editor.contentEditable = "true";
-				editor.focus();
-				showTextToolbarFor(editor, item);
-				placeCaretNearPoint(editor, event.clientX, event.clientY);
-				syncEditorTypingBold(item.typingBold);
-			});
-			editor.addEventListener("blur", () => {
-				normalizeRichEditorContent(editor);
-				editor.contentEditable = "false";
-				note.classList.remove("is-editing");
-				item.htmlContent = editor.innerHTML;
-				reflowContainingOrganizer(item);
-				clearBrowserSelection();
-				hideTextToolbar();
-				renderConnections();
-				refreshConnectionPreview();
-			});
-			editor.addEventListener("keydown", (event) => {
-				if (event.key === "Escape") {
-					editor.blur();
-				}
-			});
-			editor.addEventListener("keyup", () => {
-				refreshBoldButtonState();
-				positionTextToolbar(editor);
-			});
-			editor.addEventListener("mouseup", () => {
-				refreshBoldButtonState();
-				positionTextToolbar(editor);
-			});
-			editor.addEventListener("click", (event) => {
-				if (!note.classList.contains("is-editing") || event.detail !== 3) {
-					return;
-				}
-
-				event.preventDefault();
-				const selection = window.getSelection();
-				if (!selection) {
-					return;
-				}
-
-				const range = document.createRange();
-				range.selectNodeContents(editor);
-				selection.removeAllRanges();
-				selection.addRange(range);
-				refreshBoldButtonState();
-			});
-			const resizeHandle = document.createElement("div");
-			resizeHandle.className = "item-resize-handle note-resize-handle";
-			resizeHandle.setAttribute("aria-hidden", "true");
-
-			note.appendChild(editor);
-			note.appendChild(resizeHandle);
-			element = note;
-
-			if (focusInput) {
-				queueMicrotask(() => {
-					note.classList.add("is-editing");
-					editor.contentEditable = "true";
-					editor.focus();
-					showTextToolbarFor(editor, item);
-					syncEditorTypingBold(item.typingBold);
-				});
-			}
+			element = createNoteItemElement(item, focusInput, noteItemRenderDeps);
 		} else if (item.type === "group") {
-			const groupItem = document.createElement("div");
-			groupItem.className = "group-item item";
-			if (!item.width) {
-				item.width = GROUP_WIDTH;
-			}
-			groupItem.style.width = `${item.width}px`;
-			if (item.backgroundImageUrl) {
-				groupItem.style.setProperty("--group-item-bg-image", `url("${item.backgroundImageUrl}")`);
-			}
-			const input = document.createElement("input");
-			input.type = "text";
-			input.value = item.title;
-			input.disabled = true;
-			input.setAttribute("aria-label", `Group title ${item.title}`);
-			input.addEventListener("input", () => {
-				item.title = input.value || "Untitled group";
-				item.board.title = item.title;
-				growGroupWidthToFitTitle(groupItem, input, item);
-				reflowContainingOrganizer(item);
-				refreshBoardHeader();
-			});
-			input.addEventListener("blur", () => {
-				if (!input.value.trim()) {
-					input.value = "Untitled group";
-				}
-				item.title = input.value;
-				item.board.title = item.title;
-				growGroupWidthToFitTitle(groupItem, input, item);
-				reflowContainingOrganizer(item);
-				exitInlineEditMode(groupItem, input);
-				refreshBoardHeader();
-			});
-			input.addEventListener("keydown", (event) => {
-				if (event.key === "Enter" || event.key === "Escape") {
-					input.blur();
-				}
-			});
-			groupItem.addEventListener("dblclick", (event) => {
-				event.preventDefault();
-				event.stopPropagation();
-				if (groupItem.classList.contains("is-editing")) {
-					return;
-				}
-				boardStack.push(item.board);
-				renderBoard();
-			});
-			groupItem.appendChild(input);
-			element = groupItem;
-
-			if (focusInput) {
-				queueMicrotask(() => {
-					groupItem.classList.add("is-editing");
-					input.disabled = false;
-					input.focus();
-					input.select();
-				});
-			}
+			element = createGroupItemElement(item, focusInput, groupItemRenderDeps);
 		} else if (item.type === "organizer") {
-			const organizerItem = document.createElement("div");
-			organizerItem.className = "organizer-item item";
-			organizerItem.style.width = `${item.width}px`;
-			organizerItem.style.height = `${item.height}px`;
-
-			const header = document.createElement("div");
-			header.className = "organizer-header";
-			const titleInput = document.createElement("input");
-			titleInput.type = "text";
-			titleInput.value = item.title;
-			titleInput.disabled = true;
-			titleInput.setAttribute("aria-label", `Organizer title ${item.title}`);
-			titleInput.addEventListener("input", () => {
-				item.title = titleInput.value || "Untitled organizer";
-			});
-			titleInput.addEventListener("blur", () => {
-				if (!titleInput.value.trim()) {
-					titleInput.value = "Untitled organizer";
-				}
-				item.title = titleInput.value;
-				exitInlineEditMode(organizerItem, titleInput);
-			});
-			titleInput.addEventListener("keydown", (event) => {
-				if (event.key === "Enter" || event.key === "Escape") {
-					titleInput.blur();
-				}
-			});
-			header.appendChild(titleInput);
-
-			const body = document.createElement("div");
-			body.className = "organizer-body";
-
-			organizerItem.addEventListener("dblclick", (event) => {
-				event.preventDefault();
-				event.stopPropagation();
-				if (organizerItem.classList.contains("is-editing")) {
-					return;
-				}
-				const pointerY = event.clientY - organizerItem.getBoundingClientRect().top;
-				if (pointerY > ORGANIZER_HEADER_HEIGHT) {
-					return;
-				}
-				organizerItem.classList.add("is-editing");
-				titleInput.disabled = false;
-				titleInput.focus();
-				titleInput.select();
-			});
-
-			organizerItem.appendChild(header);
-			organizerItem.appendChild(body);
-			element = organizerItem;
-
-			if (focusInput) {
-				queueMicrotask(() => {
-					organizerItem.classList.add("is-editing");
-					titleInput.disabled = false;
-					titleInput.focus();
-					titleInput.select();
-				});
-			}
+			element = createOrganizerItemElement(item, focusInput, organizerItemRenderDeps);
 		} else {
-			const imageItem = document.createElement("div");
-			imageItem.className = "image-item item";
-			imageItem.style.width = `${item.width}px`;
-			imageItem.style.height = `${item.height}px`;
-
-			const image = document.createElement("img");
-			image.src = item.src;
-			image.alt = "";
-			image.draggable = false;
-
-			const resizeHandle = document.createElement("div");
-			resizeHandle.className = "item-resize-handle";
-			resizeHandle.setAttribute("aria-hidden", "true");
-
-			imageItem.appendChild(image);
-			imageItem.appendChild(resizeHandle);
-			element = imageItem;
+			element = createImageItemElement(item);
 		}
 
 		element.dataset.itemId = item.id;

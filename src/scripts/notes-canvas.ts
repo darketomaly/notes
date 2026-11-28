@@ -1650,7 +1650,7 @@ export function initNotesCanvas(): void {
 				refreshBoldButtonState();
 			});
 			const resizeHandle = document.createElement("div");
-			resizeHandle.className = "item-resize-handle";
+			resizeHandle.className = "item-resize-handle note-resize-handle";
 			resizeHandle.setAttribute("aria-hidden", "true");
 
 			note.appendChild(editor);

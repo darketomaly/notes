@@ -1,4 +1,5 @@
 import interact from "interactjs";
+import hotkeys from "hotkeys-js";
 import {
 	CONTEXT_MENU_HEIGHT,
 	CONTEXT_MENU_WIDTH,
@@ -2513,79 +2514,78 @@ export function initNotesCanvas(): void {
 		closeContextMenu();
 	});
 
-	document.addEventListener("keydown", (event) => {
-		const target = event.target;
-		const targetIsActiveEditableControl =
+	function isActiveEditableTarget(target: EventTarget | null): boolean {
+		return (
 			target instanceof HTMLElement &&
 			((target.tagName === "INPUT" && !(target as HTMLInputElement).disabled) ||
 				(target.tagName === "TEXTAREA" && !(target as HTMLTextAreaElement).disabled) ||
-				target.isContentEditable);
+				target.isContentEditable)
+		);
+	}
 
-		if (event.key === "Escape") {
-			if (activeRichEditor) {
-				activeRichEditor.blur();
-			}
-			closeContextMenu();
-			clearConnectionPreview();
-			setSingleSelectedItem(null);
-			stopMarqueeSelection();
+	hotkeys.filter = () => true;
+
+	hotkeys("esc", { element: document }, (event) => {
+		event.preventDefault();
+		if (activeRichEditor) {
+			activeRichEditor.blur();
 		}
+		closeContextMenu();
+		clearConnectionPreview();
+		setSingleSelectedItem(null);
+		stopMarqueeSelection();
+	});
 
-		if (event.key === "F2") {
-			if (activeRichEditor || targetIsActiveEditableControl) {
-				return;
-			}
-			if (selectedItemIds.size !== 1) {
-				return;
-			}
-
-			const selectedId = Array.from(selectedItemIds)[0];
-			const selectedItem = currentBoard().items.find((candidate) => candidate.id === selectedId);
-			if (!selectedItem) {
-				return;
-			}
-
-			if (selectedItem.type === "group") {
-				event.preventDefault();
-				startGroupEditingById(selectedItem.id);
-				return;
-			}
-			if (selectedItem.type === "organizer") {
-				event.preventDefault();
-				startOrganizerEditingById(selectedItem.id);
-			}
+	hotkeys("f2", { element: document }, (event) => {
+		if (activeRichEditor || isActiveEditableTarget(event.target)) {
+			return;
 		}
-
-		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") {
-			event.preventDefault();
-			if (
-				activeRichEditor ||
-				targetIsActiveEditableControl ||
-				selectedItemIds.size === 0
-			) {
-				return;
-			}
-			if (duplicateItemsByIds(new Set(selectedItemIds))) {
-				renderBoard();
-			}
+		if (selectedItemIds.size !== 1) {
 			return;
 		}
 
-		if (event.key === "Delete") {
-			if (
-				activeRichEditor ||
-				targetIsActiveEditableControl
-			) {
-				return;
-			}
-			if (selectedItemIds.size === 0) {
-				return;
-			}
+		const selectedId = Array.from(selectedItemIds)[0];
+		const selectedItem = currentBoard().items.find((candidate) => candidate.id === selectedId);
+		if (!selectedItem) {
+			return;
+		}
 
+		if (selectedItem.type === "group") {
 			event.preventDefault();
-			if (deleteSelectedItems()) {
-				renderBoard();
-			}
+			startGroupEditingById(selectedItem.id);
+			return;
+		}
+		if (selectedItem.type === "organizer") {
+			event.preventDefault();
+			startOrganizerEditingById(selectedItem.id);
+		}
+	});
+
+	hotkeys("ctrl+d,command+d", { element: document }, (event) => {
+		event.preventDefault();
+		if (
+			activeRichEditor ||
+			isActiveEditableTarget(event.target) ||
+			selectedItemIds.size === 0
+		) {
+			return;
+		}
+		if (duplicateItemsByIds(new Set(selectedItemIds))) {
+			renderBoard();
+		}
+	});
+
+	hotkeys("del", { element: document }, (event) => {
+		if (activeRichEditor || isActiveEditableTarget(event.target)) {
+			return;
+		}
+		if (selectedItemIds.size === 0) {
+			return;
+		}
+
+		event.preventDefault();
+		if (deleteSelectedItems()) {
+			renderBoard();
 		}
 	});
 

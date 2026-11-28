@@ -51,7 +51,10 @@ import {
 	createOrganizerItemElement,
 	type OrganizerItemRenderDeps,
 } from "./canvas/items/organizer";
-import { createImageItemElement } from "./canvas/items/image";
+import {
+	createImageItemElement,
+	refreshImageResizeHandleContrast,
+} from "./canvas/items/image";
 
 interface ConnectionDraft {
 	fixedItemId: string;
@@ -1521,6 +1524,7 @@ export function initCanvas(): void {
 					element.style.top = `${item.y}px`;
 					element.style.width = `${item.width}px`;
 					element.style.height = `${item.height}px`;
+					refreshImageResizeHandleContrast(element);
 					reflowContainingOrganizer(item);
 					renderConnections();
 					refreshConnectionPreview();

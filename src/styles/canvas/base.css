@@ -1,0 +1,24 @@
+@import "@fontsource/rajdhani/400.css";
+@import "@fontsource/rajdhani/500.css";
+@import "@fontsource/rajdhani/600.css";
+
+:root {
+	color-scheme: dark;
+	--glow-rgb: 84, 166, 255;
+	--glow-soft: rgba(var(--glow-rgb), 0.2);
+	--glow-strong: rgba(var(--glow-rgb), 0.34);
+	--group-card-bg-image: url("/group-card-bg.svg");
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+	margin: 0;
+	font-family: "Rajdhani", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+	background: #151515;
+	color: #ececec;
+}

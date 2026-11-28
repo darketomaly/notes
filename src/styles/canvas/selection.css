@@ -1,0 +1,42 @@
+.selection-marquee {
+	position: absolute;
+	z-index: 6;
+	border: 1px solid rgba(var(--glow-rgb), 0.72);
+	background: rgba(var(--glow-rgb), 0.12);
+	box-shadow:
+		0 0 0 1px rgba(var(--glow-rgb), 0.2),
+		0 0 14px rgba(var(--glow-rgb), 0.24);
+	pointer-events: none;
+}
+
+.selection-marquee[hidden] {
+	display: none;
+}
+
+.snap-guide {
+	position: absolute;
+	z-index: 7;
+	pointer-events: none;
+	background: rgba(var(--glow-rgb), 0.32);
+	box-shadow:
+		0 0 0 1px rgba(var(--glow-rgb), 0.18),
+		0 0 10px rgba(var(--glow-rgb), 0.24);
+}
+
+.snap-guide[hidden] {
+	display: none;
+}
+
+.snap-guide-vertical {
+	top: 0;
+	bottom: 0;
+	width: 1px;
+	transform: translateX(-0.5px);
+}
+
+.snap-guide-horizontal {
+	left: 0;
+	right: 0;
+	height: 1px;
+	transform: translateY(-0.5px);
+}

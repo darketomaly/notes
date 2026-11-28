@@ -1,0 +1,28 @@
+.image-item {
+	--item-border-color: #525252;
+	--item-radius: 0.6rem;
+	--item-bg: #212121;
+	--item-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+	--item-hover-border: rgba(var(--glow-rgb), 0.62);
+	--item-hover-shadow:
+		0 8px 20px rgba(0, 0, 0, 0.28),
+		0 0 0 1px var(--glow-soft),
+		0 0 18px var(--glow-strong);
+	--item-selected-border: rgba(var(--glow-rgb), 0.78);
+	--item-selected-shadow:
+		0 8px 20px rgba(0, 0, 0, 0.28),
+		0 0 0 2px rgba(var(--glow-rgb), 0.28);
+
+	overflow: hidden;
+	touch-action: none;
+}
+
+.image-item img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	pointer-events: none;
+	user-select: none;
+	-webkit-user-select: none;
+}

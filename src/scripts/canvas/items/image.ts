@@ -12,7 +12,7 @@ export function createImageItemElement(item: ImageItem): HTMLElement {
 	image.draggable = false;
 
 	const resizeHandle = document.createElement("div");
-	resizeHandle.className = "item-resize-handle";
+	resizeHandle.className = "item-resize-handle subtle-resize-handle contextual-resize-handle";
 	resizeHandle.setAttribute("aria-hidden", "true");
 
 	imageItem.appendChild(image);

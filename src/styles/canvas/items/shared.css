@@ -72,6 +72,55 @@
 	opacity: 0.92;
 }
 
+.item .contextual-resize-handle {
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease;
+}
+
+.item:hover .contextual-resize-handle,
+.item.is-selected .contextual-resize-handle,
+.item.is-editing .contextual-resize-handle,
+.item:focus-within .contextual-resize-handle {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.subtle-resize-handle {
+	right: 2px;
+	bottom: 2px;
+	width: 12px;
+	height: 12px;
+	border-top-left-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.subtle-resize-handle::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-top-left-radius: 0;
+	background: rgba(0, 0, 0, 0.26);
+	clip-path: polygon(100% 0, 0 100%, 100% 100%);
+	opacity: 0.5;
+}
+
+.subtle-resize-handle::after {
+	inset: 0;
+	content: "";
+	position: absolute;
+	border-top-left-radius: 0;
+	background: repeating-linear-gradient(
+		135deg,
+		rgba(246, 246, 246, 0.9) 0 1px,
+		transparent 1px 3px
+	);
+	clip-path: polygon(100% 0, 0 100%, 100% 100%);
+	transform: none;
+	opacity: 0.39;
+}
+
 @keyframes item-punch-in {
 	0% {
 		transform: scale(0.86);

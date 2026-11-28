@@ -108,7 +108,7 @@ export function createNoteItemElement(
 	});
 
 	const resizeHandle = document.createElement("div");
-	resizeHandle.className = "item-resize-handle note-resize-handle";
+	resizeHandle.className = "item-resize-handle subtle-resize-handle contextual-resize-handle";
 	resizeHandle.setAttribute("aria-hidden", "true");
 
 	note.appendChild(editor);
